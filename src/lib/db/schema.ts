@@ -1,0 +1,514 @@
+// ═══════════════════════════════════════════════════════════════════════
+// NeuralBet — Database Schema
+//
+// Every BSD API data source mapped to a table.
+// The engine reads from these tables, never from the API directly.
+// Sync jobs populate these tables on schedule.
+// ═══════════════════════════════════════════════════════════════════════
+
+import { getTursoClient } from './turso-client';
+
+export async function initializeDatabase(): Promise<void> {
+  const db = getTursoClient();
+
+  // ── CORE: Events ─────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY,
+      league_id INTEGER NOT NULL,
+      home_team_id INTEGER NOT NULL,
+      home_team TEXT NOT NULL,
+      away_team_id INTEGER NOT NULL,
+      away_team TEXT NOT NULL,
+      home_coach_id INTEGER,
+      away_coach_id INTEGER,
+      referee_id INTEGER,
+      venue_id INTEGER,
+      event_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'notstarted',
+      round_number INTEGER,
+      period TEXT,
+      current_minute INTEGER,
+      home_score INTEGER DEFAULT 0,
+      away_score INTEGER DEFAULT 0,
+      home_score_ht INTEGER,
+      away_score_ht INTEGER,
+      is_local_derby INTEGER DEFAULT 0,
+      is_neutral_ground INTEGER DEFAULT 0,
+      travel_distance_km INTEGER DEFAULT 0,
+      weather_code INTEGER,
+      weather_description TEXT,
+      weather_wind_speed REAL,
+      weather_temperature_c REAL,
+      pitch_condition INTEGER,
+      attendance INTEGER,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_league ON events(league_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_home_team ON events(home_team_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_away_team ON events(away_team_id)`);
+
+  // ── EVENT STATS (xG, shots, possession per match) ────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS event_stats (
+      event_id INTEGER PRIMARY KEY,
+      home_total_shots INTEGER DEFAULT 0,
+      away_total_shots INTEGER DEFAULT 0,
+      home_ball_possession INTEGER DEFAULT 0,
+      away_ball_possession INTEGER DEFAULT 0,
+      home_pass_accuracy REAL DEFAULT 0,
+      away_pass_accuracy REAL DEFAULT 0,
+      home_xg REAL DEFAULT 0,
+      away_xg REAL DEFAULT 0,
+      home_attacks INTEGER DEFAULT 0,
+      away_attacks INTEGER DEFAULT 0,
+      home_dangerous_attacks INTEGER DEFAULT 0,
+      away_dangerous_attacks INTEGER DEFAULT 0,
+      home_corners INTEGER DEFAULT 0,
+      away_corners INTEGER DEFAULT 0,
+      home_fouls INTEGER DEFAULT 0,
+      away_fouls INTEGER DEFAULT 0,
+      home_offsides INTEGER DEFAULT 0,
+      away_offsides INTEGER DEFAULT 0,
+      home_yellow_cards INTEGER DEFAULT 0,
+      away_yellow_cards INTEGER DEFAULT 0,
+      home_red_cards INTEGER DEFAULT 0,
+      away_red_cards INTEGER DEFAULT 0,
+      home_shots_on_target INTEGER DEFAULT 0,
+      away_shots_on_target INTEGER DEFAULT 0,
+      home_shots_inside_box INTEGER DEFAULT 0,
+      away_shots_inside_box INTEGER DEFAULT 0,
+      home_shots_outside_box INTEGER DEFAULT 0,
+      away_shots_outside_box INTEGER DEFAULT 0,
+      shotmap_json TEXT,
+      momentum_json TEXT,
+      xg_per_minute_json TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  // ── EVENT ODDS (consensus) ──────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS event_odds (
+      event_id INTEGER PRIMARY KEY,
+      home_win REAL,
+      draw REAL,
+      away_win REAL,
+      over_15_goals REAL,
+      over_25_goals REAL,
+      over_35_goals REAL,
+      under_15_goals REAL,
+      under_25_goals REAL,
+      under_35_goals REAL,
+      btts_yes REAL,
+      btts_no REAL,
+      double_chance_1x REAL,
+      double_chance_12 REAL,
+      double_chance_x2 REAL,
+      draw_no_bet_home REAL,
+      draw_no_bet_away REAL,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  // ── ODDS MOVEMENT (multi-bookmaker, for steam detection) ────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS odds_movement (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      market TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      bookmaker_slug TEXT,
+      bookmaker_name TEXT,
+      decimal_odds REAL NOT NULL,
+      previous_decimal_odds REAL,
+      implied_probability REAL,
+      movement TEXT,
+      is_max_quote INTEGER DEFAULT 0,
+      updated_at TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_odds_movement_event ON odds_movement(event_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_odds_movement_market ON odds_movement(event_id, market)`);
+
+  // ── POLYMARKET ODDS (prediction market) ─────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS polymarket_odds (
+      event_id INTEGER PRIMARY KEY,
+      home_win_price REAL,
+      draw_price REAL,
+      away_win_price REAL,
+      over_25_price REAL,
+      under_25_price REAL,
+      btts_yes_price REAL,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  // ── EVENT LINEUPS ───────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS event_lineups (
+      event_id INTEGER PRIMARY KEY,
+      lineup_status TEXT,
+      home_formation TEXT,
+      away_formation TEXT,
+      home_confidence REAL,
+      away_confidence REAL,
+      home_players_json TEXT,
+      away_players_json TEXT,
+      home_substitutes_json TEXT,
+      away_substitutes_json TEXT,
+      home_unavailable_json TEXT,
+      away_unavailable_json TEXT,
+      updated_at TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  // ── PLAYER MATCH STATS ──────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS player_match_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      minutes_played INTEGER DEFAULT 0,
+      rating REAL DEFAULT 0,
+      goals INTEGER DEFAULT 0,
+      goal_assist INTEGER DEFAULT 0,
+      expected_goals REAL DEFAULT 0,
+      expected_assists REAL DEFAULT 0,
+      total_shots INTEGER DEFAULT 0,
+      shots_on_target INTEGER DEFAULT 0,
+      total_pass INTEGER DEFAULT 0,
+      accurate_pass INTEGER DEFAULT 0,
+      key_pass INTEGER DEFAULT 0,
+      total_tackle INTEGER DEFAULT 0,
+      interception INTEGER DEFAULT 0,
+      yellow_card INTEGER DEFAULT 0,
+      red_card INTEGER DEFAULT 0,
+      saves INTEGER,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(event_id, player_id),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_pms_event ON player_match_stats(event_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_pms_player ON player_match_stats(player_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_pms_team ON player_match_stats(team_id)`);
+
+  // ── EVENT INCIDENTS ─────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS event_incidents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      incident_type TEXT NOT NULL,
+      minute INTEGER,
+      player_name TEXT,
+      player_id INTEGER,
+      is_home INTEGER DEFAULT 0,
+      card_type TEXT,
+      player_in TEXT,
+      player_out TEXT,
+      player_in_id INTEGER,
+      player_out_id INTEGER,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_incidents_event ON event_incidents(event_id)`);
+
+  // ── EVENT METADATA (fun facts, AI preview) ──────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS event_metadata (
+      event_id INTEGER PRIMARY KEY,
+      funfacts_json TEXT,
+      ai_preview_text TEXT,
+      ai_preview_generated_at TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  // ── LEAGUES ─────────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS leagues (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      country TEXT,
+      is_women INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      current_season_id INTEGER,
+      current_season_name TEXT,
+      current_season_year TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── STANDINGS (with xG) ────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS standings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      season_id INTEGER,
+      team_id INTEGER NOT NULL,
+      team_name TEXT NOT NULL,
+      position INTEGER,
+      played INTEGER DEFAULT 0,
+      won INTEGER DEFAULT 0,
+      drawn INTEGER DEFAULT 0,
+      lost INTEGER DEFAULT 0,
+      gf INTEGER DEFAULT 0,
+      ga INTEGER DEFAULT 0,
+      gd INTEGER DEFAULT 0,
+      pts INTEGER DEFAULT 0,
+      xgf REAL DEFAULT 0,
+      xga REAL DEFAULT 0,
+      xgd REAL DEFAULT 0,
+      xg_games INTEGER DEFAULT 0,
+      form TEXT,
+      is_live INTEGER DEFAULT 0,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(league_id, season_id, team_id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_standings_league ON standings(league_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_standings_team ON standings(team_id)`);
+
+  // ── TEAMS ───────────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS teams (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      short_name TEXT,
+      country TEXT,
+      country_code TEXT,
+      venue_id INTEGER,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── TEAM SQUADS ─────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS team_squads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      player_name TEXT NOT NULL,
+      short_name TEXT,
+      position TEXT,
+      jersey_number INTEGER,
+      nationality TEXT,
+      date_of_birth TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(team_id, player_id),
+      FOREIGN KEY (team_id) REFERENCES teams(id)
+    )
+  `);
+
+  // ── PLAYERS ─────────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS players (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      short_name TEXT,
+      position TEXT,
+      specific_position TEXT,
+      jersey_number INTEGER,
+      date_of_birth TEXT,
+      height_cm REAL,
+      weight_kg REAL,
+      preferred_foot TEXT,
+      nationality TEXT,
+      current_team_id INTEGER,
+      market_value_eur INTEGER,
+      contract_until TEXT,
+      availability TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── PLAYER CAREER (season aggregates) ───────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS player_career (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL,
+      season_id INTEGER,
+      league_id INTEGER,
+      team_id INTEGER,
+      matches INTEGER DEFAULT 0,
+      minutes INTEGER DEFAULT 0,
+      goals INTEGER DEFAULT 0,
+      assists INTEGER DEFAULT 0,
+      avg_rating REAL DEFAULT 0,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(player_id, season_id, team_id),
+      FOREIGN KEY (player_id) REFERENCES players(id)
+    )
+  `);
+
+  // ── MANAGERS ────────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS managers (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      short_name TEXT,
+      country TEXT,
+      tactical_profile TEXT,
+      preferred_formation TEXT,
+      current_team_id INTEGER,
+      matches_total INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      draws INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0,
+      win_pct REAL DEFAULT 0,
+      avg_goals_scored REAL DEFAULT 0,
+      avg_goals_conceded REAL DEFAULT 0,
+      avg_possession REAL DEFAULT 0,
+      clean_sheet_pct REAL DEFAULT 0,
+      btts_pct REAL DEFAULT 0,
+      over_25_pct REAL DEFAULT 0,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── MANAGER CAREER (per-tenure record) ─────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS manager_career (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      manager_id INTEGER NOT NULL,
+      team_id INTEGER,
+      team_name TEXT,
+      date_from TEXT,
+      date_to TEXT,
+      matches INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      draws INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0,
+      win_pct REAL DEFAULT 0,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (manager_id) REFERENCES managers(id)
+    )
+  `);
+
+  // ── REFEREES ────────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS referees (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      country TEXT,
+      birthdate TEXT,
+      matches INTEGER DEFAULT 0,
+      total_yellow_cards INTEGER DEFAULT 0,
+      total_red_cards INTEGER DEFAULT 0,
+      avg_yellow_per_match REAL DEFAULT 0,
+      avg_red_per_match REAL DEFAULT 0,
+      avg_goals_per_match REAL DEFAULT 0,
+      avg_fouls_per_match REAL DEFAULT 0,
+      career_games INTEGER DEFAULT 0,
+      career_yellow_cards INTEGER DEFAULT 0,
+      career_red_cards INTEGER DEFAULT 0,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── VENUES ──────────────────────────────────────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS venues (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      city TEXT,
+      country TEXT,
+      country_code TEXT,
+      capacity INTEGER,
+      latitude REAL,
+      longitude REAL,
+      pitch_length_m REAL,
+      pitch_width_m REAL,
+      built_year INTEGER,
+      home_team_id INTEGER,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── SYNC TRACKER (what was synced and when) ─────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sync_tracker (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sync_type TEXT NOT NULL,
+      last_sync_at TEXT NOT NULL,
+      records_synced INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'success',
+      error_message TEXT,
+      UNIQUE(sync_type)
+    )
+  `);
+
+  // ── ENGINE PREDICTIONS (output of our engine, stored) ───────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS engine_predictions (
+      event_id INTEGER PRIMARY KEY,
+      home_win_prob REAL NOT NULL,
+      draw_prob REAL NOT NULL,
+      away_win_prob REAL NOT NULL,
+      predicted TEXT NOT NULL,
+      home_expected_goals REAL,
+      away_expected_goals REAL,
+      over_05_prob REAL,
+      over_15_prob REAL,
+      over_25_prob REAL,
+      over_35_prob REAL,
+      over_45_prob REAL,
+      under_05_prob REAL,
+      under_15_prob REAL,
+      under_25_prob REAL,
+      under_35_prob REAL,
+      under_45_prob REAL,
+      btts_yes_prob REAL,
+      btts_no_prob REAL,
+      double_chance_1x_prob REAL,
+      double_chance_12_prob REAL,
+      double_chance_x2_prob REAL,
+      draw_no_bet_home_prob REAL,
+      draw_no_bet_away_prob REAL,
+      asian_handicap_json TEXT,
+      correct_scores_json TEXT,
+      most_likely_score TEXT,
+      confidence REAL,
+      risk_level TEXT,
+      risk_score REAL,
+      decision_action TEXT,
+      decision_reasoning TEXT,
+      decision_risk_reward REAL,
+      is_contranian INTEGER DEFAULT 0,
+      is_safe_play INTEGER DEFAULT 0,
+      engine_version TEXT NOT NULL,
+      models_json TEXT,
+      weights_json TEXT,
+      situational_json TEXT,
+      market_json TEXT,
+      value_bets_json TEXT,
+      generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_engine_predictions_date ON engine_predictions(event_id)`);
+
+  console.log('[DB] Schema initialized — all tables ready');
+}
