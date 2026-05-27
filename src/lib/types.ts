@@ -219,7 +219,7 @@ export interface StandingData {
   live: boolean;
 }
 
-export interface ValueBetData {
+export interface ValueBetLegacy {
   match: MatchData;
   prediction: PredictionData;
   market: string;
@@ -248,29 +248,130 @@ export interface BetRecord {
 // Navigation
 export type NavTab = 'dashboard' | 'predictions' | 'value-bets' | 'live' | 'leagues' | 'bankroll';
 
-// Our custom prediction engine types
+// ═══════════════════════════════════════════════════════════════════════
+// PUNTER BRAIN v2 — Frontend Types
+// ═══════════════════════════════════════════════════════════════════════
+
+// Model breakdown
 export interface OurModelBreakdown {
-  elo: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
-  poisson: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
-  form: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
-  xg: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
-  attackDefense: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
+  elo: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number; reliability: number };
+  poisson: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number; reliability: number };
+  form: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number; reliability: number };
+  xg: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number; reliability: number };
+  attackDefense: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number; reliability: number };
 }
 
+// Situational intelligence
+type MotivationLevel = 'must-win' | 'high' | 'medium' | 'low' | 'dead-rubber';
+
+export interface SituationalData {
+  isDerby: boolean;
+  isNeutralGround: boolean;
+  homeMotivation: MotivationLevel;
+  awayMotivation: MotivationLevel;
+  motivationGap: number;
+  homeFatigue: number;
+  awayFatigue: number;
+  travelFactor: number;
+  dataQuality: number;
+  sampleSizeWarning: boolean;
+  notes: string[];
+}
+
+// Market data
+export interface MarketData {
+  homeWinOdds: number | null;
+  drawOdds: number | null;
+  awayWinOdds: number | null;
+  over25Odds: number | null;
+  under25Odds: number | null;
+  bttsYesOdds: number | null;
+  over15Odds: number | null;
+  over35Odds: number | null;
+  impliedHomeWin: number | null;
+  impliedDraw: number | null;
+  impliedAwayWin: number | null;
+  overround: number | null;
+  marketConfidence: number;
+}
+
+// Risk assessment
+type RiskLevel = 'very-low' | 'low' | 'medium' | 'high' | 'very-high' | 'avoid';
+
+export interface RiskData {
+  riskLevel: RiskLevel;
+  riskScore: number;
+  modelDisagreement: number;
+  dataReliabilityIssue: boolean;
+  situationalRisk: boolean;
+  marketRisk: boolean;
+  riskFactors: string[];
+  adjustedConfidence: number;
+}
+
+// Punter decision
+type DecisionAction = 'strong-bet' | 'bet' | 'small-bet' | 'watch' | 'pass';
+
+export interface PunterDecisionData {
+  action: DecisionAction;
+  reasoning: string;
+  primaryRecommendation: string | null;
+  decisionConfidence: number;
+  isContrarian: boolean;
+  isSafePlay: boolean;
+  riskRewardScore: number;
+}
+
+// Value bet
+export type ValueBetData = {
+  market: string;
+  selection: string;
+  modelProbability: number;
+  impliedProbability: number;
+  odds: number;
+  edge: number;
+  kellyStake: number;
+  adjustedKelly: number;
+  valueRating: number;
+  isActionable: boolean;
+};
+
+// Full prediction from Punter Brain v2
 export interface OurPredictionData {
-  id: number; // eventId
-  match: MatchData;
+  eventId: number;
+  homeTeam: string;
+  awayTeam: string;
+  homeTeamId: number;
+  awayTeamId: number;
+  leagueId: number;
+  leagueName: string;
+  eventDate: string;
+  status: string;
+
   homeWinProb: number;
   drawProb: number;
   awayWinProb: number;
-  predicted: string;
-  homeXg: number;
-  awayXg: number;
+  predicted: 'H' | 'D' | 'A';
+  homeExpectedGoals: number;
+  awayExpectedGoals: number;
+
   over15Prob: number;
   over25Prob: number;
   over35Prob: number;
   bttsProb: number;
   mostLikelyScore: string;
+
+  models: OurModelBreakdown;
+  weights: { elo: number; poisson: number; xg: number; form: number; attackDefense: number };
+
+  // Punter Brain v2 intelligence layers
+  situational: SituationalData;
+  market: MarketData;
+  risk: RiskData;
+  decision: PunterDecisionData;
+  valueBets: ValueBetData[];
+
+  // Legacy compatibility
   confidence: number;
   recommendations: {
     favorite: string;
@@ -283,10 +384,15 @@ export interface OurPredictionData {
     winner: boolean;
   };
   isRecommended: boolean;
-  // Engine-specific fields
-  models: OurModelBreakdown;
-  weights: { elo: number; poisson: number; form: number; xg: number; attackDefense: number };
   engineVersion: string;
+}
+
+// Compat: id for legacy code
+export interface OurPredictionDataWithId extends OurPredictionData {
+  id: number;
+  match: MatchData;
+  homeXg: number;
+  awayXg: number;
 }
 
 export interface OurValueBetData {
@@ -299,5 +405,7 @@ export interface OurValueBetData {
   odds: number;
   edge: number;
   kellyStake: number;
+  adjustedKelly: number;
   valueRating: number;
+  isActionable: boolean;
 }

@@ -1,64 +1,102 @@
+// ═══════════════════════════════════════════════════════════════════════
+// PUNTER BRAIN v2 — Poisson Goal Distribution Model
+//
+// The workhorse. But a punter knows:
+// - Raw attack/defense ratios are noisy — regress to the mean
+// - Small sample sizes lie — 3 matches don't define a team
+// - Home advantage isn't just "goals" — it's a psychological edge
+// ═══════════════════════════════════════════════════════════════════════
+
 import type { TeamStats, ModelPrediction, LeagueAvgData } from './types';
+import { buildGoalMatrix, calculateOutcomeProbs, regressToMean, clamp } from './utils';
 
 /**
- * Calculate factorial iteratively to avoid stack overflow.
- */
-function factorial(n: number): number {
-  if (n <= 1) return 1;
-  let result = 1;
-  for (let i = 2; i <= n; i++) {
-    result *= i;
-  }
-  return result;
-}
-
-/**
- * Poisson probability: P(X=k) = (λ^k * e^-λ) / k!
- */
-function poissonProbability(lambda: number, k: number): number {
-  if (lambda <= 0) return k === 0 ? 1 : 0;
-  return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
-}
-
-/**
- * Calculate attack and defense strengths for home and away teams.
+ * Calculate attack and defense strengths with regression to mean.
+ *
+ * A punter doesn't just take raw goals-per-game. They ask:
+ * "Is this team actually good, or did they just get lucky over 5 games?"
+ *
+ * We shrink extreme values toward the league average based on sample size.
  */
 function calculateStrengths(
   homeStats: TeamStats,
   awayStats: TeamStats,
   leagueAvg: LeagueAvgData
 ) {
-  // Attack strength = team's goals scored per game / league average goals scored per game
-  const homeAttackStrength =
-    homeStats.matchesPlayed > 0
-      ? (homeStats.goalsScored / homeStats.matchesPlayed) / leagueAvg.avgGoalsScored
-      : 1;
+  const homeSampleSize = Math.max(homeStats.homeMatches, homeStats.matchesPlayed / 2);
+  const awaySampleSize = Math.max(awayStats.awayMatches, awayStats.matchesPlayed / 2);
 
-  const awayAttackStrength =
-    awayStats.matchesPlayed > 0
-      ? (awayStats.goalsScored / awayStats.matchesPlayed) / leagueAvg.avgGoalsScored
-      : 1;
+  // Home team attack (use home-specific data when available)
+  const homeGoalsPerGame = homeStats.homeMatches > 2
+    ? homeStats.homeGoalsScored / homeStats.homeMatches
+    : homeStats.matchesPlayed > 0
+      ? homeStats.goalsScored / homeStats.matchesPlayed
+      : leagueAvg.avgHomeGoals;
 
-  // Defense weakness = team's goals conceded per game / league average goals conceded per game
-  const homeDefenseWeakness =
-    homeStats.matchesPlayed > 0
-      ? (homeStats.goalsConceded / homeStats.matchesPlayed) / leagueAvg.avgGoalsConceded
-      : 1;
+  // Regress to league average
+  const homeAttackStrength = regressToMean(
+    homeGoalsPerGame / leagueAvg.avgGoalsScored,
+    1.0, // Mean attack strength is 1.0 by definition
+    homeSampleSize,
+    8 // Shrinkage rate — reasonable for football
+  );
 
-  const awayDefenseWeakness =
-    awayStats.matchesPlayed > 0
-      ? (awayStats.goalsConceded / awayStats.matchesPlayed) / leagueAvg.avgGoalsConceded
-      : 1;
+  // Away team defense weakness (use away-specific data)
+  const awayGoalsConcededPerGame = awayStats.awayMatches > 2
+    ? awayStats.awayGoalsConceded / awayStats.awayMatches
+    : awayStats.matchesPlayed > 0
+      ? awayStats.goalsConceded / awayStats.matchesPlayed
+      : leagueAvg.avgAwayGoals;
 
-  return { homeAttackStrength, awayAttackStrength, homeDefenseWeakness, awayDefenseWeakness };
+  const awayDefenseWeakness = regressToMean(
+    awayGoalsConcededPerGame / leagueAvg.avgGoalsConceded,
+    1.0,
+    awaySampleSize,
+    8
+  );
+
+  // Away team attack
+  const awayGoalsPerGame = awayStats.awayMatches > 2
+    ? awayStats.awayGoalsScored / awayStats.awayMatches
+    : awayStats.matchesPlayed > 0
+      ? awayStats.goalsScored / awayStats.matchesPlayed
+      : leagueAvg.avgAwayGoals;
+
+  const awayAttackStrength = regressToMean(
+    awayGoalsPerGame / leagueAvg.avgGoalsScored,
+    1.0,
+    awaySampleSize,
+    8
+  );
+
+  // Home team defense weakness
+  const homeGoalsConcededPerGame = homeStats.homeMatches > 2
+    ? homeStats.homeGoalsConceded / homeStats.homeMatches
+    : homeStats.matchesPlayed > 0
+      ? homeStats.goalsConceded / homeStats.matchesPlayed
+      : leagueAvg.avgHomeGoals;
+
+  const homeDefenseWeakness = regressToMean(
+    homeGoalsConcededPerGame / leagueAvg.avgGoalsConceded,
+    1.0,
+    homeSampleSize,
+    8
+  );
+
+  return {
+    homeAttackStrength,
+    awayDefenseWeakness,
+    awayAttackStrength,
+    homeDefenseWeakness,
+  };
 }
 
 /**
- * Calculate Poisson-based match prediction.
+ * Poisson-based match prediction.
  *
- * Uses attack strength * opponent defense weakness * league average to
- * determine expected goals (lambda) for each team, then builds a goal
- * probability matrix using the Poisson distribution.
+ * Uses attack strength × opponent defense weakness × league average
+ * to determine expected goals (lambda), then builds a goal probability
+ * matrix with Dixon-Coles correlation correction.
  */
 export function calculatePoissonPrediction(
   homeStats: TeamStats,
@@ -68,126 +106,36 @@ export function calculatePoissonPrediction(
   const strengths = calculateStrengths(homeStats, awayStats, leagueAvg);
 
   // Expected goals (lambda) for each team
-  const homeLambda =
-    strengths.homeAttackStrength *
-    strengths.awayDefenseWeakness *
-    leagueAvg.avgHomeGoals;
+  let homeLambda = strengths.homeAttackStrength * strengths.awayDefenseWeakness * leagueAvg.avgHomeGoals;
+  let awayLambda = strengths.awayAttackStrength * strengths.homeDefenseWeakness * leagueAvg.avgAwayGoals;
 
-  const awayLambda =
-    strengths.awayAttackStrength *
-    strengths.homeDefenseWeakness *
-    leagueAvg.avgAwayGoals;
+  // A punter's sanity check: if lambda is extreme, something's off
+  homeLambda = clamp(homeLambda, 0.4, 4.0);
+  awayLambda = clamp(awayLambda, 0.2, 3.5);
 
-  // Build goal probability matrix (0-7 goals each)
-  const maxGoals = 7;
-  let homeWinProb = 0;
-  let drawProb = 0;
-  let awayWinProb = 0;
+  // Build goal matrix with correlation adjustment
+  const matrix = buildGoalMatrix(homeLambda, awayLambda, 7, 0.1);
+  const outcomes = calculateOutcomeProbs(matrix);
 
-  for (let h = 0; h <= maxGoals; h++) {
-    for (let a = 0; a <= maxGoals; a++) {
-      const prob = poissonProbability(homeLambda, h) * poissonProbability(awayLambda, a);
-      if (h > a) {
-        homeWinProb += prob;
-      } else if (h === a) {
-        drawProb += prob;
-      } else {
-        awayWinProb += prob;
-      }
-    }
-  }
+  // Reliability based on sample size
+  const minMatches = Math.min(homeStats.matchesPlayed, awayStats.matchesPlayed);
+  let reliability: number;
+  if (minMatches < 3) reliability = 0.2;
+  else if (minMatches < 6) reliability = 0.4;
+  else if (minMatches < 10) reliability = 0.6;
+  else if (minMatches < 20) reliability = 0.8;
+  else reliability = 0.9;
 
-  // Normalize
-  const total = homeWinProb + drawProb + awayWinProb;
-  if (total === 0) {
-    return {
-      homeWinProb: 0.4,
-      drawProb: 0.3,
-      awayWinProb: 0.3,
-      homeExpectedGoals: Math.round(homeLambda * 100) / 100,
-      awayExpectedGoals: Math.round(awayLambda * 100) / 100,
-    };
-  }
+  // Check if we used home/away specific data
+  const hasHomeAwaySplit = homeStats.homeMatches > 2 && awayStats.awayMatches > 2;
+  if (hasHomeAwaySplit) reliability = Math.min(1, reliability + 0.1);
 
   return {
-    homeWinProb: homeWinProb / total,
-    drawProb: drawProb / total,
-    awayWinProb: awayWinProb / total,
+    homeWinProb: outcomes.homeWinProb,
+    drawProb: outcomes.drawProb,
+    awayWinProb: outcomes.awayWinProb,
     homeExpectedGoals: Math.round(homeLambda * 100) / 100,
     awayExpectedGoals: Math.round(awayLambda * 100) / 100,
-  };
-}
-
-/**
- * Build the full goal matrix for derived markets (over/under, BTTS, etc.)
- */
-export function buildGoalMatrix(
-  homeLambda: number,
-  awayLambda: number,
-  maxGoals = 7
-): number[][] {
-  const matrix: number[][] = [];
-  for (let h = 0; h <= maxGoals; h++) {
-    matrix[h] = [];
-    for (let a = 0; a <= maxGoals; a++) {
-      matrix[h][a] = poissonProbability(homeLambda, h) * poissonProbability(awayLambda, a);
-    }
-  }
-  return matrix;
-}
-
-/**
- * Calculate over/under and BTTS probabilities from a goal matrix.
- */
-export function calculateDerivedMarkets(matrix: number[][], threshold: number = 0): {
-  homeWinProb: number;
-  drawProb: number;
-  awayWinProb: number;
-  over15Prob: number;
-  over25Prob: number;
-  over35Prob: number;
-  bttsProb: number;
-  mostLikelyScore: string;
-} {
-  let homeWinProb = 0;
-  let drawProb = 0;
-  let awayWinProb = 0;
-  let over15Prob = 0;
-  let over25Prob = 0;
-  let over35Prob = 0;
-  let bttsProb = 0;
-  let maxProb = 0;
-  let mostLikelyScore = '1-1';
-
-  for (let h = 0; h < matrix.length; h++) {
-    for (let a = 0; a < (matrix[h]?.length ?? 0); a++) {
-      const prob = matrix[h][a] - (threshold || 0);
-      const actualProb = matrix[h][a];
-
-      if (h > a) homeWinProb += actualProb;
-      else if (h === a) drawProb += actualProb;
-      else awayWinProb += actualProb;
-
-      if (h + a > 1.5) over15Prob += actualProb;
-      if (h + a > 2.5) over25Prob += actualProb;
-      if (h + a > 3.5) over35Prob += actualProb;
-      if (h > 0 && a > 0) bttsProb += actualProb;
-
-      if (actualProb > maxProb) {
-        maxProb = actualProb;
-        mostLikelyScore = `${h}-${a}`;
-      }
-    }
-  }
-
-  return {
-    homeWinProb,
-    drawProb,
-    awayWinProb,
-    over15Prob,
-    over25Prob,
-    over35Prob,
-    bttsProb,
-    mostLikelyScore,
+    reliability,
   };
 }

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchEvents, fetchLiveEvents, fetchOurPredictions } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
-import { MatchCard } from '@/components/match-card';
+import { PunterMatchCard } from '@/components/punter-match-card';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -35,14 +35,15 @@ export function Dashboard() {
     refetchInterval: 60000,
   });
 
-  const { data: recommendedData } = useQuery({
-    queryKey: ['our-predictions', 'recommended'],
-    queryFn: () => fetchOurPredictions({ limit: 30 }),
-  });
-
   const liveMatches = liveData?.results || [];
   const predictions = predictionsData?.results || [];
-  const recommendedPredictions = (recommendedData?.results || []).filter(
+  const rawPredictions = predictionsData?.raw || [];
+
+  // Build raw prediction map
+  const rawPredictionMap = new Map<number, import('@/lib/types').OurPredictionData>();
+  rawPredictions.forEach((p) => rawPredictionMap.set(p.eventId, p));
+
+  const recommendedPredictions = predictions.filter(
     (p: PredictionData) => p.isRecommended
   );
   const events = eventsData?.results || [];
@@ -59,7 +60,7 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            NeuralBet Ensemble Engine — 5 models, 1 prediction
+            Punter Brain v2 — Thinks like a human, bets like a pro
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -151,7 +152,7 @@ export function Dashboard() {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <MatchCard prediction={pred} />
+                  <PunterMatchCard prediction={pred} ourPrediction={rawPredictionMap.get(pred.id)} />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -170,12 +171,12 @@ export function Dashboard() {
             <Zap className="w-4 h-4 text-amber-400" />
             <h2 className="text-lg font-semibold">Recommended Bets</h2>
             <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">
-              Ensemble Picks
+              Punter Picks
             </Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {recommendedPredictions.slice(0, 4).map((pred: PredictionData) => (
-              <MatchCard key={pred.id} prediction={pred} compact />
+              <PunterMatchCard key={pred.id} prediction={pred} ourPrediction={rawPredictionMap.get(pred.id)} compact />
             ))}
           </div>
         </div>

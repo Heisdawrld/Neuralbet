@@ -7,8 +7,8 @@ import type {
   PredictionData,
   OddsData,
   StandingData,
-  ValueBetData,
   OurPredictionData,
+  OurPredictionDataWithId,
   OurValueBetData,
 } from './types';
 
@@ -31,7 +31,7 @@ function normalizeEvent(e: ApiEvent): MatchData {
     homeTeamId: e.home_team_id,
     awayTeamId: e.away_team_id,
     leagueId: e.league_id,
-    leagueName: '', // Events don't include league name, will be enriched later
+    leagueName: '',
     eventDate: e.event_date,
     status: e.status,
     homeScore: e.home_score,
@@ -91,6 +91,42 @@ function normalizePrediction(p: ApiPrediction): PredictionData {
   };
 }
 
+// Convert OurPredictionData (Punter Brain v2) to legacy PredictionData for components
+function normalizeOurPrediction(p: OurPredictionData): PredictionData {
+  return {
+    id: p.eventId,
+    match: {
+      id: p.eventId,
+      homeTeam: p.homeTeam,
+      awayTeam: p.awayTeam,
+      homeTeamId: p.homeTeamId,
+      awayTeamId: p.awayTeamId,
+      leagueId: p.leagueId,
+      leagueName: p.leagueName,
+      eventDate: p.eventDate,
+      status: p.status,
+      homeScore: null,
+      awayScore: null,
+      currentMinute: null,
+      period: '',
+    },
+    homeWinProb: p.homeWinProb,
+    drawProb: p.drawProb,
+    awayWinProb: p.awayWinProb,
+    predicted: p.predicted,
+    homeXg: p.homeExpectedGoals,
+    awayXg: p.awayExpectedGoals,
+    over15Prob: p.over15Prob,
+    over25Prob: p.over25Prob,
+    over35Prob: p.over35Prob,
+    bttsProb: p.bttsProb,
+    mostLikelyScore: p.mostLikelyScore,
+    confidence: p.confidence,
+    recommendations: p.recommendations,
+    isRecommended: p.isRecommended,
+  };
+}
+
 // Events
 export async function fetchEvents(dateFrom: string, dateTo: string, limit = 50) {
   const data = await fetchAPI<{ results?: ApiEvent[]; count?: number }>({
@@ -129,7 +165,7 @@ export async function fetchEventOdds(id: number): Promise<OddsData> {
   };
 }
 
-// Predictions
+// Predictions (BSD API — kept for comparison)
 export async function fetchPredictions(params?: { status?: string; limit?: number; recommended?: boolean }) {
   const p: Record<string, string> = { endpoint: 'predictions/', limit: String(params?.limit || 50) };
   if (params?.status) p.status = params.status;
@@ -176,42 +212,31 @@ export async function fetchLeagueStandings(leagueId: number): Promise<{ standing
   };
 }
 
-// Value Bets
-export async function fetchValueBets(): Promise<{ results: ValueBetData[]; count: number }> {
+// Value Bets (BSD API — kept for comparison)
+export async function fetchValueBets(): Promise<{ results: import('./types').ValueBetLegacy[]; count: number }> {
   const res = await fetch('/api/value-bets');
   if (!res.ok) throw new Error(`Value bets API error: ${res.status}`);
   return res.json();
 }
 
-// ── Our custom engine predictions ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// PUNTER BRAIN v2 — Our Custom Engine
+// ═══════════════════════════════════════════════════════════════════════
 
-function normalizeOurPrediction(p: OurPredictionData): PredictionData {
-  return {
-    id: p.id,
-    match: p.match,
-    homeWinProb: p.homeWinProb,
-    drawProb: p.drawProb,
-    awayWinProb: p.awayWinProb,
-    predicted: p.predicted,
-    homeXg: p.homeXg,
-    awayXg: p.awayXg,
-    over15Prob: p.over15Prob,
-    over25Prob: p.over25Prob,
-    over35Prob: p.over35Prob,
-    bttsProb: p.bttsProb,
-    mostLikelyScore: p.mostLikelyScore,
-    confidence: p.confidence,
-    recommendations: p.recommendations,
-    isRecommended: p.isRecommended,
-  };
-}
-
+/**
+ * Fetch predictions from our Punter Brain v2 engine.
+ * Returns both normalized (legacy) and raw (punter) data.
+ */
 export async function fetchOurPredictions(params?: {
   dateFrom?: string;
   dateTo?: string;
   leagueId?: number;
   limit?: number;
-}): Promise<{ results: PredictionData[]; count: number; raw?: OurPredictionData[] }> {
+}): Promise<{
+  results: PredictionData[];
+  count: number;
+  raw: OurPredictionData[];
+}> {
   const searchParams = new URLSearchParams();
   if (params?.dateFrom) searchParams.set('date_from', params.dateFrom);
   if (params?.dateTo) searchParams.set('date_to', params.dateTo);
@@ -225,14 +250,6 @@ export async function fetchOurPredictions(params?: {
     count: data.count || 0,
     raw: data.results || [],
   };
-}
-
-// Fetch raw OurPredictionData (with engine breakdown) for a single prediction
-export async function fetchOurPredictionRaw(eventId: number): Promise<OurPredictionData | null> {
-  const res = await fetch(`/api/our-predictions?limit=100`);
-  if (!res.ok) return null;
-  const data: { results: OurPredictionData[] } = await res.json();
-  return data.results?.find((p) => p.id === eventId) ?? null;
 }
 
 export async function fetchOurValueBets(): Promise<{ results: OurValueBetData[]; count: number }> {

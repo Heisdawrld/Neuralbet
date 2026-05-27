@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       count: predictions.length,
     });
   } catch (error) {
-    console.error('Our predictions API error:', error);
+    console.error('Punter Brain predictions API error:', error);
     return NextResponse.json(
       { error: 'Failed to generate predictions' },
       { status: 500 }

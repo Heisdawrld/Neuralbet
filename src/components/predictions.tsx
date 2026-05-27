@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchOurPredictions, fetchLeagues } from '@/lib/api';
-import { MatchCard } from '@/components/match-card';
+import { fetchOurPredictions } from '@/lib/api';
+import { PunterMatchCard } from '@/components/punter-match-card';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,17 +11,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Brain, Filter, Star, TrendingUp } from 'lucide-react';
+import { Brain, Filter, Star, TrendingUp, ShieldCheck, AlertTriangle, Eye } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import type { PredictionData } from '@/lib/types';
+import type { PredictionData, OurPredictionData } from '@/lib/types';
 
-type SortKey = 'confidence' | 'date' | 'league';
+type SortKey = 'confidence' | 'date' | 'league' | 'risk';
+type DecisionFilter = 'all' | 'strong-bet' | 'bet' | 'small-bet' | 'watch' | 'pass';
 
 export function Predictions() {
   const [minConfidence, setMinConfidence] = useState(0);
   const [recommendedOnly, setRecommendedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>('confidence');
   const [leagueFilter, setLeagueFilter] = useState<string>('all');
+  const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>('all');
 
   const { data: predictionsData, isLoading } = useQuery({
     queryKey: ['our-predictions', 'all'],
@@ -30,9 +32,21 @@ export function Predictions() {
   });
 
   const predictions = predictionsData?.results || [];
+  const rawPredictions = predictionsData?.raw || [];
 
   const filteredPredictions = useMemo(() => {
     let filtered = [...predictions];
+    const rawFiltered = [...rawPredictions];
+
+    // Filter by punter decision
+    if (decisionFilter !== 'all') {
+      const filteredIds = new Set(
+        rawFiltered
+          .filter((p) => p.decision.action === decisionFilter)
+          .map((p) => p.eventId)
+      );
+      filtered = filtered.filter((p) => filteredIds.has(p.id));
+    }
 
     if (recommendedOnly) {
       filtered = filtered.filter((p: PredictionData) => p.isRecommended);
@@ -60,7 +74,17 @@ export function Predictions() {
     });
 
     return filtered;
-  }, [predictions, recommendedOnly, minConfidence, leagueFilter, sortBy]);
+  }, [predictions, rawPredictions, recommendedOnly, minConfidence, leagueFilter, sortBy, decisionFilter]);
+
+  // Count decisions
+  const decisionCounts = useMemo(() => {
+    const counts = { 'strong-bet': 0, 'bet': 0, 'small-bet': 0, 'watch': 0, 'pass': 0 };
+    rawPredictions.forEach((p) => {
+      const action = p.decision.action;
+      if (action in counts) counts[action as keyof typeof counts]++;
+    });
+    return counts;
+  }, [rawPredictions]);
 
   // Get unique leagues from predictions
   const uniqueLeagues = useMemo(() => {
@@ -73,6 +97,13 @@ export function Predictions() {
     return Array.from(leagueMap.entries()).map(([id, name]) => ({ id, name }));
   }, [predictions]);
 
+  // Build raw prediction map for lookups
+  const rawPredictionMap = useMemo(() => {
+    const map = new Map<number, OurPredictionData>();
+    rawPredictions.forEach((p) => map.set(p.eventId, p));
+    return map;
+  }, [rawPredictions]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -81,7 +112,7 @@ export function Predictions() {
           Predictions
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          NeuralBet Ensemble Engine — 5 models, 1 prediction
+          Punter Brain v2 — Thinks like a human, bets like a pro
         </p>
       </div>
 
@@ -91,7 +122,7 @@ export function Predictions() {
           <Filter className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">Filters</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Min Confidence: {minConfidence}%</Label>
             <input
@@ -133,6 +164,22 @@ export function Predictions() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Decision</Label>
+            <Select value={decisionFilter} onValueChange={(v) => setDecisionFilter(v as DecisionFilter)}>
+              <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Decisions</SelectItem>
+                <SelectItem value="strong-bet">💪 Strong Bet ({decisionCounts['strong-bet']})</SelectItem>
+                <SelectItem value="bet">✅ Bet ({decisionCounts['bet']})</SelectItem>
+                <SelectItem value="small-bet">🔍 Small Bet ({decisionCounts['small-bet']})</SelectItem>
+                <SelectItem value="watch">👁 Watch ({decisionCounts['watch']})</SelectItem>
+                <SelectItem value="pass">🚫 Pass ({decisionCounts['pass']})</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex items-center gap-3 pt-5">
             <Switch
               checked={recommendedOnly}
@@ -157,17 +204,25 @@ export function Predictions() {
           <Star className="w-3 h-3 mr-1" />
           {filteredPredictions.filter((p: PredictionData) => p.isRecommended).length} Recommended
         </Badge>
+        <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
+          <ShieldCheck className="w-3 h-3 mr-1" />
+          {decisionCounts['strong-bet'] + decisionCounts['bet']} Bets
+        </Badge>
+        <Badge variant="secondary" className="bg-violet-500/10 text-violet-400 border-violet-500/20">
+          <Eye className="w-3 h-3 mr-1" />
+          {decisionCounts['watch']} Watching
+        </Badge>
       </div>
 
       {/* Predictions Grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-40 rounded-xl bg-white/5" />
+            <Skeleton key={i} className="h-48 rounded-xl bg-white/5" />
           ))}
         </div>
       ) : filteredPredictions.length > 0 ? (
-        <ScrollArea className="h-[calc(100vh-320px)]">
+        <ScrollArea className="h-[calc(100vh-380px)]">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
             <AnimatePresence mode="popLayout">
               {filteredPredictions.map((pred: PredictionData) => (
@@ -179,7 +234,10 @@ export function Predictions() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.25 }}
                 >
-                  <MatchCard prediction={pred} />
+                  <PunterMatchCard
+                    prediction={pred}
+                    ourPrediction={rawPredictionMap.get(pred.id)}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>

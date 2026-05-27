@@ -130,7 +130,8 @@ export function EnginePanel({ prediction }: EnginePanelProps) {
                         <span className={info.color}>{info.icon}</span>
                         <span className="text-xs font-medium">{info.label}</span>
                         <span className="text-[10px] text-muted-foreground">
-                          (w: {(weight * 100).toFixed(0)}%)
+                          (w: {(weight * 100).toFixed(0)}%
+                          {'reliability' in modelData && modelData.reliability !== undefined ? `, r: ${(modelData.reliability * 100).toFixed(0)}%` : ''})
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
