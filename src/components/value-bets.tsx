@@ -2,19 +2,19 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchValueBets } from '@/lib/api';
+import { fetchOurValueBets } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProbabilityBar } from '@/components/probability-bar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Crosshair, TrendingUp, Star, AlertTriangle, DollarSign, Percent } from 'lucide-react';
-import type { ValueBetData } from '@/lib/types';
+import type { OurValueBetData } from '@/lib/types';
 
 export function ValueBets() {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['value-bets'],
-    queryFn: fetchValueBets,
+    queryKey: ['our-value-bets'],
+    queryFn: fetchOurValueBets,
     refetchInterval: 120000,
   });
 
@@ -28,7 +28,7 @@ export function ValueBets() {
           Value Bets
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Where our model disagrees with the market — edge detection at its finest
+          Where our ensemble engine disagrees with the market — edge detection at its finest
         </p>
       </div>
 
@@ -39,8 +39,8 @@ export function ValueBets() {
           <div className="text-sm">
             <p className="text-foreground font-medium">How Value Bets Work</p>
             <p className="text-muted-foreground mt-1">
-              We compare our ML model&apos;s probability against the implied probability from bookmaker odds.
-              When the model detects an edge (difference &gt; 5%), it&apos;s flagged as a value bet.
+              We compare our ensemble engine&apos;s probability against the implied probability from bookmaker odds.
+              When the engine detects an edge (difference &gt; 5%), it&apos;s flagged as a value bet.
               The Kelly stake shows optimal bet sizing.
             </p>
           </div>
@@ -63,7 +63,7 @@ export function ValueBets() {
           </div>
           <span className="text-xl font-bold font-mono text-cyan-400">
             {valueBets.length > 0
-              ? (valueBets.reduce((s: number, v: ValueBetData) => s + v.edge, 0) / valueBets.length * 100).toFixed(1)
+              ? (valueBets.reduce((s: number, v: OurValueBetData) => s + v.edge, 0) / valueBets.length * 100).toFixed(1)
               : '0.0'}%
           </span>
         </Card>
@@ -73,7 +73,7 @@ export function ValueBets() {
             <span className="text-[10px] text-muted-foreground uppercase">Top Rating</span>
           </div>
           <span className="text-xl font-bold font-mono text-amber-400">
-            {valueBets.length > 0 ? Math.max(...valueBets.map((v: ValueBetData) => v.valueRating)) : 0}/5
+            {valueBets.length > 0 ? Math.max(...valueBets.map((v: OurValueBetData) => v.valueRating)) : 0}/5
           </span>
         </Card>
         <Card className="glass-card p-3">
@@ -82,7 +82,7 @@ export function ValueBets() {
             <span className="text-[10px] text-muted-foreground uppercase">Max Kelly</span>
           </div>
           <span className="text-xl font-bold font-mono text-violet-400">
-            {valueBets.length > 0 ? (Math.max(...valueBets.map((v: ValueBetData) => v.kellyStake)) * 100).toFixed(1) : '0.0'}%
+            {valueBets.length > 0 ? (Math.max(...valueBets.map((v: OurValueBetData) => v.kellyStake)) * 100).toFixed(1) : '0.0'}%
           </span>
         </Card>
       </div>
@@ -103,7 +103,7 @@ export function ValueBets() {
         <ScrollArea className="h-[calc(100vh-420px)]">
           <div className="space-y-3 pr-2">
             <AnimatePresence mode="popLayout">
-              {valueBets.map((vb: ValueBetData, idx: number) => (
+              {valueBets.map((vb: OurValueBetData, idx: number) => (
                 <motion.div
                   key={`${vb.match.id}-${vb.selection}`}
                   initial={{ opacity: 0, x: -20 }}
@@ -127,7 +127,7 @@ export function ValueBets() {
   );
 }
 
-function ValueBetCard({ valueBet }: { valueBet: ValueBetData }) {
+function ValueBetCard({ valueBet }: { valueBet: OurValueBetData }) {
   const edgePct = (valueBet.edge * 100).toFixed(1);
   const modelPct = (valueBet.modelProbability * 100).toFixed(1);
   const impliedPct = (valueBet.impliedProbability * 100).toFixed(1);

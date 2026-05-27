@@ -8,6 +8,8 @@ import type {
   OddsData,
   StandingData,
   ValueBetData,
+  OurPredictionData,
+  OurValueBetData,
 } from './types';
 
 const API_BASE = '/api/football';
@@ -178,5 +180,63 @@ export async function fetchLeagueStandings(leagueId: number): Promise<{ standing
 export async function fetchValueBets(): Promise<{ results: ValueBetData[]; count: number }> {
   const res = await fetch('/api/value-bets');
   if (!res.ok) throw new Error(`Value bets API error: ${res.status}`);
+  return res.json();
+}
+
+// ── Our custom engine predictions ─────────────────────────────────
+
+function normalizeOurPrediction(p: OurPredictionData): PredictionData {
+  return {
+    id: p.id,
+    match: p.match,
+    homeWinProb: p.homeWinProb,
+    drawProb: p.drawProb,
+    awayWinProb: p.awayWinProb,
+    predicted: p.predicted,
+    homeXg: p.homeXg,
+    awayXg: p.awayXg,
+    over15Prob: p.over15Prob,
+    over25Prob: p.over25Prob,
+    over35Prob: p.over35Prob,
+    bttsProb: p.bttsProb,
+    mostLikelyScore: p.mostLikelyScore,
+    confidence: p.confidence,
+    recommendations: p.recommendations,
+    isRecommended: p.isRecommended,
+  };
+}
+
+export async function fetchOurPredictions(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  leagueId?: number;
+  limit?: number;
+}): Promise<{ results: PredictionData[]; count: number; raw?: OurPredictionData[] }> {
+  const searchParams = new URLSearchParams();
+  if (params?.dateFrom) searchParams.set('date_from', params.dateFrom);
+  if (params?.dateTo) searchParams.set('date_to', params.dateTo);
+  if (params?.leagueId) searchParams.set('league_id', String(params.leagueId));
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const res = await fetch(`/api/our-predictions?${searchParams.toString()}`);
+  if (!res.ok) throw new Error(`Our predictions API error: ${res.status}`);
+  const data: { results: OurPredictionData[]; count: number } = await res.json();
+  return {
+    results: (data.results || []).map(normalizeOurPrediction),
+    count: data.count || 0,
+    raw: data.results || [],
+  };
+}
+
+// Fetch raw OurPredictionData (with engine breakdown) for a single prediction
+export async function fetchOurPredictionRaw(eventId: number): Promise<OurPredictionData | null> {
+  const res = await fetch(`/api/our-predictions?limit=100`);
+  if (!res.ok) return null;
+  const data: { results: OurPredictionData[] } = await res.json();
+  return data.results?.find((p) => p.id === eventId) ?? null;
+}
+
+export async function fetchOurValueBets(): Promise<{ results: OurValueBetData[]; count: number }> {
+  const res = await fetch('/api/our-value-bets');
+  if (!res.ok) throw new Error(`Our value bets API error: ${res.status}`);
   return res.json();
 }

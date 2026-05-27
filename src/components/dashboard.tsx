@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchEvents, fetchLiveEvents, fetchPredictions } from '@/lib/api';
+import { fetchEvents, fetchLiveEvents, fetchOurPredictions } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import { MatchCard } from '@/components/match-card';
 import { Card } from '@/components/ui/card';
@@ -30,19 +30,21 @@ export function Dashboard() {
   });
 
   const { data: predictionsData, isLoading: predictionsLoading } = useQuery({
-    queryKey: ['predictions', 'upcoming'],
-    queryFn: () => fetchPredictions({ status: 'upcoming', limit: 30 }),
+    queryKey: ['our-predictions', 'upcoming'],
+    queryFn: () => fetchOurPredictions({ limit: 30 }),
     refetchInterval: 60000,
   });
 
   const { data: recommendedData } = useQuery({
-    queryKey: ['predictions', 'recommended'],
-    queryFn: () => fetchPredictions({ recommended: true, limit: 10 }),
+    queryKey: ['our-predictions', 'recommended'],
+    queryFn: () => fetchOurPredictions({ limit: 30 }),
   });
 
   const liveMatches = liveData?.results || [];
   const predictions = predictionsData?.results || [];
-  const recommendedPredictions = recommendedData?.results || [];
+  const recommendedPredictions = (recommendedData?.results || []).filter(
+    (p: PredictionData) => p.isRecommended
+  );
   const events = eventsData?.results || [];
 
   const topPredictions = predictions
@@ -57,7 +59,7 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            AI-powered football predictions & analytics
+            NeuralBet Ensemble Engine — 5 models, 1 prediction
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -168,7 +170,7 @@ export function Dashboard() {
             <Zap className="w-4 h-4 text-amber-400" />
             <h2 className="text-lg font-semibold">Recommended Bets</h2>
             <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">
-              AI Picks
+              Ensemble Picks
             </Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

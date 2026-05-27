@@ -247,3 +247,57 @@ export interface BetRecord {
 
 // Navigation
 export type NavTab = 'dashboard' | 'predictions' | 'value-bets' | 'live' | 'leagues' | 'bankroll';
+
+// Our custom prediction engine types
+export interface OurModelBreakdown {
+  elo: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
+  poisson: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
+  form: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
+  xg: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
+  attackDefense: { homeWinProb: number; drawProb: number; awayWinProb: number; homeExpectedGoals: number; awayExpectedGoals: number };
+}
+
+export interface OurPredictionData {
+  id: number; // eventId
+  match: MatchData;
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
+  predicted: string;
+  homeXg: number;
+  awayXg: number;
+  over15Prob: number;
+  over25Prob: number;
+  over35Prob: number;
+  bttsProb: number;
+  mostLikelyScore: string;
+  confidence: number;
+  recommendations: {
+    favorite: string;
+    favoriteProb: number;
+    betFavorite: boolean;
+    over15: boolean;
+    over25: boolean;
+    over35: boolean;
+    btts: boolean;
+    winner: boolean;
+  };
+  isRecommended: boolean;
+  // Engine-specific fields
+  models: OurModelBreakdown;
+  weights: { elo: number; poisson: number; form: number; xg: number; attackDefense: number };
+  engineVersion: string;
+}
+
+export interface OurValueBetData {
+  match: MatchData;
+  prediction: OurPredictionData;
+  market: string;
+  selection: string;
+  modelProbability: number;
+  impliedProbability: number;
+  odds: number;
+  edge: number;
+  kellyStake: number;
+  valueRating: number;
+}

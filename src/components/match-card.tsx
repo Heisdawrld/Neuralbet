@@ -4,30 +4,41 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ConfidenceMeter } from './confidence-meter';
 import { ProbabilityBar } from './probability-bar';
-import type { PredictionData } from '@/lib/types';
+import { EnginePanel } from './engine-panel';
+import type { PredictionData, OurPredictionData } from '@/lib/types';
 import { format } from 'date-fns';
 import { Clock, Zap } from 'lucide-react';
+import { useState } from 'react';
 
 interface MatchCardProps {
   prediction: PredictionData;
+  ourPrediction?: OurPredictionData;
   compact?: boolean;
   onClick?: () => void;
 }
 
-export function MatchCard({ prediction, compact = false, onClick }: MatchCardProps) {
+export function MatchCard({ prediction, ourPrediction, compact = false, onClick }: MatchCardProps) {
   const isLive = prediction.match.status === 'in' || prediction.match.status === 'live';
   const isRecommended = prediction.isRecommended;
+  const [showEngine, setShowEngine] = useState(false);
 
   const getRecommendationLabel = () => {
     const recs = prediction.recommendations;
-    if (recs.betFavorite) return '🔥 Best Bet';
-    if (recs.winner) return '🏆 Winner';
-    if (recs.over25) return '⚽ Over 2.5';
-    if (recs.btts) return '🎯 BTTS';
-    if (recs.over15) return '📈 Over 1.5';
-    if (recs.over35) return '💥 Over 3.5';
-    if (isRecommended) return '⚡ Recommended';
+    if (recs.betFavorite) return 'Best Bet';
+    if (recs.winner) return 'Winner';
+    if (recs.over25) return 'Over 2.5';
+    if (recs.btts) return 'BTTS';
+    if (recs.over15) return 'Over 1.5';
+    if (recs.over35) return 'Over 3.5';
+    if (isRecommended) return 'Recommended';
     return null;
+  };
+
+  const handleCardClick = () => {
+    if (ourPrediction) {
+      setShowEngine(!showEngine);
+    }
+    onClick?.();
   };
 
   return (
@@ -35,7 +46,7 @@ export function MatchCard({ prediction, compact = false, onClick }: MatchCardPro
       className={`glass-card hover-glow cursor-pointer transition-all duration-300 ${
         compact ? 'p-3' : 'p-4'
       }`}
-      onClick={onClick}
+      onClick={handleCardClick}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -54,6 +65,11 @@ export function MatchCard({ prediction, compact = false, onClick }: MatchCardPro
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 live-pulse" />
                 LIVE
               </span>
+            )}
+            {ourPrediction && (
+              <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 text-[9px] px-1.5 py-0">
+                Ensemble
+              </Badge>
             )}
           </div>
 
@@ -126,6 +142,11 @@ export function MatchCard({ prediction, compact = false, onClick }: MatchCardPro
             {getRecommendationLabel() || 'Recommended'}
           </Badge>
         </div>
+      )}
+
+      {/* Engine Breakdown Panel */}
+      {ourPrediction && showEngine && (
+        <EnginePanel prediction={ourPrediction} />
       )}
     </Card>
   );

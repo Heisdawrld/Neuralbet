@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchPredictions, fetchLeagues } from '@/lib/api';
+import { fetchOurPredictions, fetchLeagues } from '@/lib/api';
 import { MatchCard } from '@/components/match-card';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,8 +24,8 @@ export function Predictions() {
   const [leagueFilter, setLeagueFilter] = useState<string>('all');
 
   const { data: predictionsData, isLoading } = useQuery({
-    queryKey: ['predictions', 'all'],
-    queryFn: () => fetchPredictions({ status: 'upcoming', limit: 100 }),
+    queryKey: ['our-predictions', 'all'],
+    queryFn: () => fetchOurPredictions({ limit: 100 }),
     refetchInterval: 60000,
   });
 
@@ -81,7 +81,7 @@ export function Predictions() {
           Predictions
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          ML-powered match predictions with confidence ratings
+          NeuralBet Ensemble Engine — 5 models, 1 prediction
         </p>
       </div>
 
