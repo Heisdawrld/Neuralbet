@@ -55,3 +55,29 @@ Stage Summary:
 - ALL football markets: 1X2, O/U 0.5-4.5, BTTS, Double Chance, Draw No Bet, Asian Handicap, Correct Scores
 - Safety-first architecture: risk assessment, punter decision, Kelly sizing, value bet detection across all markets
 - Engine reads exclusively from Turso DB — no API calls during prediction
+---
+Task ID: turso-remote-connect
+Agent: Main
+Task: Connect to remote Turso database and sync data
+
+Work Log:
+- Updated .env with Turso remote URL and auth token
+- Tested connection to libsql://nueralbet-dawrld.aws-us-west-2.turso.io — SUCCESS
+- Initialized schema on remote Turso — 13 tables created
+- Synced data from BSD API to remote Turso:
+  - 53 Leagues
+  - 170 Upcoming events (with weather, travel, derby data)
+  - 200 Finished events (for Elo ratings)
+  - 2,392 Standings rows (with xGF/xGA/xGD)
+  - 100 Events with odds (1X2, O/U, BTTS)
+- Tested Punter Brain v3 against remote Turso — WORKING
+  - Generated predictions for Jamaica vs India, Deportivo vs Espanyol, Atletico Mineiro vs Puerto Cabello
+  - All markets populated: 1X2, O/U 0.5-4.5, BTTS, DC, DNB, Asian Handicap, Correct Scores
+  - Punter decisions working: small-bet, pass, watch with proper reasoning
+  - Risk assessment working: medium, high with proper factors
+
+Stage Summary:
+- Remote Turso DB is live and populated at libsql://nueralbet-dawrld.aws-us-west-2.turso.io
+- Punter Brain v3 generates predictions reading from Turso (not BSD API)
+- All 8 models functional: Elo, Poisson, xG, Form, AttDef, Manager, Referee, Lineup
+- Full market coverage: 1X2, O/U 0.5-4.5, BTTS, DC, DNB, AH, CS
