@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchOurPredictions } from '@/lib/api';
-import { PunterMatchCard } from '@/components/punter-match-card';
+import { fetchV4Tips } from '@/lib/api';
+import { TipCard } from '@/components/tip-card';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,110 +11,103 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Brain, Filter, Star, TrendingUp, ShieldCheck, AlertTriangle, Eye } from 'lucide-react';
+import {
+  Brain, Filter, Crosshair, Flame, TrendingUp, X,
+  ShieldCheck, Eye, Zap, Target,
+} from 'lucide-react';
 import { useState, useMemo } from 'react';
-import type { PredictionData, OurPredictionData } from '@/lib/types';
+import type { TipQuality } from '@/lib/types';
 
-type SortKey = 'confidence' | 'date' | 'league' | 'risk';
-type DecisionFilter = 'all' | 'strong-bet' | 'bet' | 'small-bet' | 'watch' | 'pass';
+type QualityFilter = 'all' | 'gold' | 'silver' | 'bronze' | 'skip';
 
 export function Predictions() {
-  const [minConfidence, setMinConfidence] = useState(0);
-  const [recommendedOnly, setRecommendedOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<SortKey>('confidence');
+  const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all');
   const [leagueFilter, setLeagueFilter] = useState<string>('all');
-  const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>('all');
+  const [showSkipped, setShowSkipped] = useState(false);
 
-  const { data: predictionsData, isLoading } = useQuery({
-    queryKey: ['our-predictions', 'all'],
-    queryFn: () => fetchOurPredictions({ limit: 100 }),
+  const { data: tipsData, isLoading } = useQuery({
+    queryKey: ['v4-tips', 'all'],
+    queryFn: () => fetchV4Tips({ limit: 100 }),
     refetchInterval: 60000,
   });
 
-  const predictions = predictionsData?.results || [];
-  const rawPredictions = predictionsData?.raw || [];
+  const tips = tipsData?.results || [];
+  const stats = tipsData?.stats;
 
-  const filteredPredictions = useMemo(() => {
-    let filtered = [...predictions];
-    const rawFiltered = [...rawPredictions];
+  const filteredTips = useMemo(() => {
+    let filtered = [...tips];
 
-    // Filter by punter decision
-    if (decisionFilter !== 'all') {
-      const filteredIds = new Set(
-        rawFiltered
-          .filter((p) => p.decision.action === decisionFilter)
-          .map((p) => p.eventId)
-      );
-      filtered = filtered.filter((p) => filteredIds.has(p.id));
-    }
-
-    if (recommendedOnly) {
-      filtered = filtered.filter((p: PredictionData) => p.isRecommended);
-    }
-
-    if (minConfidence > 0) {
-      filtered = filtered.filter((p: PredictionData) => p.confidence >= minConfidence / 100);
-    }
-
-    if (leagueFilter !== 'all') {
-      filtered = filtered.filter((p: PredictionData) => String(p.match.leagueId) === leagueFilter);
-    }
-
-    filtered.sort((a: PredictionData, b: PredictionData) => {
-      switch (sortBy) {
-        case 'confidence':
-          return b.confidence - a.confidence;
-        case 'date':
-          return new Date(a.match.eventDate).getTime() - new Date(b.match.eventDate).getTime();
-        case 'league':
-          return (a.match.leagueName || '').localeCompare(b.match.leagueName || '');
-        default:
-          return 0;
+    // Filter by quality
+    if (qualityFilter !== 'all') {
+      if (qualityFilter === 'skip') {
+        filtered = filtered.filter(t => t.tip === null);
+      } else {
+        filtered = filtered.filter(t => t.tip?.quality === qualityFilter);
       }
-    });
+    }
+
+    // Hide skipped matches by default
+    if (!showSkipped) {
+      filtered = filtered.filter(t => t.tip !== null);
+    }
+
+    // League filter
+    if (leagueFilter !== 'all') {
+      filtered = filtered.filter(t => String(t.leagueId) === leagueFilter);
+    }
 
     return filtered;
-  }, [predictions, rawPredictions, recommendedOnly, minConfidence, leagueFilter, sortBy, decisionFilter]);
+  }, [tips, qualityFilter, leagueFilter, showSkipped]);
 
-  // Count decisions
-  const decisionCounts = useMemo(() => {
-    const counts = { 'strong-bet': 0, 'bet': 0, 'small-bet': 0, 'watch': 0, 'pass': 0 };
-    rawPredictions.forEach((p) => {
-      const action = p.decision.action;
-      if (action in counts) counts[action as keyof typeof counts]++;
-    });
-    return counts;
-  }, [rawPredictions]);
-
-  // Get unique leagues from predictions
+  // Get unique leagues
   const uniqueLeagues = useMemo(() => {
     const leagueMap = new Map<number, string>();
-    predictions.forEach((p: PredictionData) => {
-      if (p.match.leagueId && p.match.leagueName) {
-        leagueMap.set(p.match.leagueId, p.match.leagueName);
+    tips.forEach(t => {
+      if (t.leagueId && t.leagueName) {
+        leagueMap.set(t.leagueId, t.leagueName);
       }
     });
     return Array.from(leagueMap.entries()).map(([id, name]) => ({ id, name }));
-  }, [predictions]);
-
-  // Build raw prediction map for lookups
-  const rawPredictionMap = useMemo(() => {
-    const map = new Map<number, OurPredictionData>();
-    rawPredictions.forEach((p) => map.set(p.eventId, p));
-    return map;
-  }, [rawPredictions]);
+  }, [tips]);
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Brain className="w-6 h-6 text-emerald-400" />
+          <Crosshair className="w-6 h-6 text-emerald-400" />
           Predictions
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Punter Brain v2 — Thinks like a human, bets like a pro
+          Punter Brain v4 — Study everything. Pick ONE. Or walk away.
         </p>
       </div>
+
+      {/* Stats Row */}
+      {stats && (
+        <div className="flex gap-3 flex-wrap">
+          <Badge variant="secondary" className="bg-amber-500/10 text-amber-300 border-amber-500/20">
+            <Flame className="w-3 h-3 mr-1" />
+            {stats.gold} Gold
+          </Badge>
+          <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+            <Crosshair className="w-3 h-3 mr-1" />
+            {stats.silver} Silver
+          </Badge>
+          <Badge variant="secondary" className="bg-slate-500/10 text-slate-300 border-slate-500/20">
+            <TrendingUp className="w-3 h-3 mr-1" />
+            {stats.bronze} Bronze
+          </Badge>
+          <Badge variant="secondary" className="bg-slate-500/10 text-slate-500 border-slate-500/20">
+            <X className="w-3 h-3 mr-1" />
+            {stats.skipped} Skipped
+          </Badge>
+          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+            <Target className="w-3 h-3 mr-1" />
+            {stats.withTip} Tips
+          </Badge>
+        </div>
+      )}
 
       {/* Filters */}
       <Card className="glass-card p-4">
@@ -122,18 +115,21 @@ export function Predictions() {
           <Filter className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">Filters</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Min Confidence: {minConfidence}%</Label>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={10}
-              value={minConfidence}
-              onChange={(e) => setMinConfidence(Number(e.target.value))}
-              className="w-full accent-emerald-500"
-            />
+            <Label className="text-xs text-muted-foreground">Quality</Label>
+            <Select value={qualityFilter} onValueChange={(v) => setQualityFilter(v as QualityFilter)}>
+              <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tips</SelectItem>
+                <SelectItem value="gold">Gold — Strong Bets</SelectItem>
+                <SelectItem value="silver">Silver — Good Bets</SelectItem>
+                <SelectItem value="bronze">Bronze — Small Bets</SelectItem>
+                <SelectItem value="skip">Skipped — No Value</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">League</Label>
@@ -151,93 +147,41 @@ export function Predictions() {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Sort By</Label>
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-              <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="confidence">Confidence</SelectItem>
-                <SelectItem value="date">Date</SelectItem>
-                <SelectItem value="league">League</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Decision</Label>
-            <Select value={decisionFilter} onValueChange={(v) => setDecisionFilter(v as DecisionFilter)}>
-              <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Decisions</SelectItem>
-                <SelectItem value="strong-bet">💪 Strong Bet ({decisionCounts['strong-bet']})</SelectItem>
-                <SelectItem value="bet">✅ Bet ({decisionCounts['bet']})</SelectItem>
-                <SelectItem value="small-bet">🔍 Small Bet ({decisionCounts['small-bet']})</SelectItem>
-                <SelectItem value="watch">👁 Watch ({decisionCounts['watch']})</SelectItem>
-                <SelectItem value="pass">🚫 Pass ({decisionCounts['pass']})</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div className="flex items-center gap-3 pt-5">
             <Switch
-              checked={recommendedOnly}
-              onCheckedChange={setRecommendedOnly}
-              className="data-[state=checked]:bg-emerald-500"
+              checked={showSkipped}
+              onCheckedChange={setShowSkipped}
+              className="data-[state=checked]:bg-slate-500"
             />
             <Label className="text-xs flex items-center gap-1">
-              <Star className="w-3 h-3 text-amber-400" />
-              Recommended Only
+              <Eye className="w-3 h-3" />
+              Show Skipped
             </Label>
           </div>
         </div>
       </Card>
 
-      {/* Stats Row */}
-      <div className="flex gap-3 flex-wrap">
-        <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-          <TrendingUp className="w-3 h-3 mr-1" />
-          {filteredPredictions.length} Predictions
-        </Badge>
-        <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20">
-          <Star className="w-3 h-3 mr-1" />
-          {filteredPredictions.filter((p: PredictionData) => p.isRecommended).length} Recommended
-        </Badge>
-        <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
-          <ShieldCheck className="w-3 h-3 mr-1" />
-          {decisionCounts['strong-bet'] + decisionCounts['bet']} Bets
-        </Badge>
-        <Badge variant="secondary" className="bg-violet-500/10 text-violet-400 border-violet-500/20">
-          <Eye className="w-3 h-3 mr-1" />
-          {decisionCounts['watch']} Watching
-        </Badge>
-      </div>
-
-      {/* Predictions Grid */}
+      {/* Tips Grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-48 rounded-xl bg-white/5" />
           ))}
         </div>
-      ) : filteredPredictions.length > 0 ? (
-        <ScrollArea className="h-[calc(100vh-380px)]">
+      ) : filteredTips.length > 0 ? (
+        <ScrollArea className="h-[calc(100vh-420px)]">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
             <AnimatePresence mode="popLayout">
-              {filteredPredictions.map((pred: PredictionData) => (
+              {filteredTips.map((tip) => (
                 <motion.div
-                  key={pred.id}
+                  key={tip.eventId}
                   layout
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.25 }}
                 >
-                  <PunterMatchCard
-                    prediction={pred}
-                    ourPrediction={rawPredictionMap.get(pred.id)}
-                  />
+                  <TipCard tip={tip} />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -245,8 +189,11 @@ export function Predictions() {
         </ScrollArea>
       ) : (
         <Card className="glass-card p-8 text-center">
-          <Brain className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">No predictions match your filters</p>
+          <Crosshair className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground">No tips match your filters</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            The punter only tips when there&apos;s value. Try adjusting filters.
+          </p>
         </Card>
       )}
     </div>

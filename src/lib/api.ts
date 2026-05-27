@@ -10,6 +10,8 @@ import type {
   OurPredictionData,
   OurPredictionDataWithId,
   OurValueBetData,
+  PunterTipV4Data,
+  TipQuality,
 } from './types';
 
 const API_BASE = '/api/football';
@@ -255,5 +257,34 @@ export async function fetchOurPredictions(params?: {
 export async function fetchOurValueBets(): Promise<{ results: OurValueBetData[]; count: number }> {
   const res = await fetch('/api/our-value-bets');
   if (!res.ok) throw new Error(`Our value bets API error: ${res.status}`);
+  return res.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PUNTER BRAIN v4 — THE SNIPER
+//
+// Study everything. Pick ONE. Or walk away.
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function fetchV4Tips(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  leagueId?: number;
+  limit?: number;
+  minQuality?: TipQuality;
+}): Promise<{
+  results: PunterTipV4Data[];
+  count: number;
+  stats: { gold: number; silver: number; bronze: number; skipped: number; withTip: number };
+  engineVersion: string;
+}> {
+  const searchParams = new URLSearchParams();
+  if (params?.dateFrom) searchParams.set('date_from', params.dateFrom);
+  if (params?.dateTo) searchParams.set('date_to', params.dateTo);
+  if (params?.leagueId) searchParams.set('league_id', String(params.leagueId));
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  if (params?.minQuality) searchParams.set('min_quality', params.minQuality);
+  const res = await fetch(`/api/v4/predictions?${searchParams.toString()}`);
+  if (!res.ok) throw new Error(`V4 predictions API error: ${res.status}`);
   return res.json();
 }

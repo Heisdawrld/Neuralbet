@@ -47,8 +47,8 @@ const navItems: Array<{
   {
     id: 'predictions',
     label: 'Predictions',
-    icon: <Brain className="w-5 h-5" />,
-    description: 'AI Picks',
+    icon: <Crosshair className="w-5 h-5" />,
+    description: 'One Tip',
   },
   {
     id: 'value-bets',
@@ -150,7 +150,7 @@ function AppContent() {
         {/* Footer */}
         <div className="p-4 border-t border-white/5">
           <div className="text-[10px] text-slate-600 text-center">
-            Powered by BSD API v2
+            Punter Brain v4 · Turso · BSD API v2
           </div>
           <div className="text-[10px] text-slate-700 text-center mt-1">
             © 2026 NeuralBet

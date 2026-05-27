@@ -2,17 +2,17 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchEvents, fetchLiveEvents, fetchOurPredictions } from '@/lib/api';
+import { fetchEvents, fetchLiveEvents, fetchV4Tips } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
-import { PunterMatchCard } from '@/components/punter-match-card';
+import { TipCard } from '@/components/tip-card';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Activity, TrendingUp, Zap, Radio, BarChart3, Calendar } from 'lucide-react';
+import { Activity, TrendingUp, Zap, Radio, BarChart3, Calendar, Crosshair, Flame, Target } from 'lucide-react';
 import { format } from 'date-fns';
 import { Input } from '@/components/ui/input';
-import type { PredictionData, MatchData } from '@/lib/types';
+import type { MatchData } from '@/lib/types';
 
 export function Dashboard() {
   const { selectedDate, setSelectedDate } = useAppStore();
@@ -29,29 +29,21 @@ export function Dashboard() {
     refetchInterval: 30000,
   });
 
-  const { data: predictionsData, isLoading: predictionsLoading } = useQuery({
-    queryKey: ['our-predictions', 'upcoming'],
-    queryFn: () => fetchOurPredictions({ limit: 30 }),
+  const { data: tipsData, isLoading: tipsLoading } = useQuery({
+    queryKey: ['v4-tips', 'dashboard'],
+    queryFn: () => fetchV4Tips({ limit: 30 }),
     refetchInterval: 60000,
   });
 
   const liveMatches = liveData?.results || [];
-  const predictions = predictionsData?.results || [];
-  const rawPredictions = predictionsData?.raw || [];
+  const tips = tipsData?.results || [];
+  const stats = tipsData?.stats;
 
-  // Build raw prediction map
-  const rawPredictionMap = new Map<number, import('@/lib/types').OurPredictionData>();
-  rawPredictions.forEach((p) => rawPredictionMap.set(p.eventId, p));
-
-  const recommendedPredictions = predictions.filter(
-    (p: PredictionData) => p.isRecommended
-  );
+  // Only show tips (not skipped)
+  const goldTips = tips.filter(t => t.tip?.quality === 'gold');
+  const silverTips = tips.filter(t => t.tip?.quality === 'silver');
+  const topTips = [...goldTips, ...silverTips].slice(0, 8);
   const events = eventsData?.results || [];
-
-  const topPredictions = predictions
-    .filter((p: PredictionData) => p.confidence >= 0.3)
-    .sort((a: PredictionData, b: PredictionData) => b.confidence - a.confidence)
-    .slice(0, 8);
 
   return (
     <div className="space-y-6">
@@ -60,7 +52,7 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Punter Brain v2 — Thinks like a human, bets like a pro
+            Punter Brain v4 — Study everything. Pick ONE. Or walk away.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -77,10 +69,10 @@ export function Dashboard() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <StatCard
           icon={<BarChart3 className="w-4 h-4" />}
-          label="Matches Today"
+          label="Matches"
           value={events.length.toString()}
           color="text-cyan-400"
           loading={eventsLoading}
@@ -93,18 +85,25 @@ export function Dashboard() {
           loading={liveLoading}
         />
         <StatCard
-          icon={<TrendingUp className="w-4 h-4" />}
-          label="Predictions"
-          value={predictions.length.toString()}
+          icon={<Flame className="w-4 h-4" />}
+          label="Gold Tips"
+          value={(stats?.gold ?? 0).toString()}
           color="text-amber-400"
-          loading={predictionsLoading}
+          loading={tipsLoading}
         />
         <StatCard
-          icon={<Zap className="w-4 h-4" />}
-          label="Best Bets"
-          value={recommendedPredictions.length.toString()}
+          icon={<Crosshair className="w-4 h-4" />}
+          label="Silver Tips"
+          value={(stats?.silver ?? 0).toString()}
+          color="text-cyan-300"
+          loading={tipsLoading}
+        />
+        <StatCard
+          icon={<Target className="w-4 h-4" />}
+          label="Total Tips"
+          value={(stats?.withTip ?? 0).toString()}
           color="text-violet-400"
-          loading={predictionsLoading}
+          loading={tipsLoading}
         />
       </div>
 
@@ -129,57 +128,61 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Today's Predictions */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Activity className="w-4 h-4 text-emerald-400" />
-          <h2 className="text-lg font-semibold">Top Predictions</h2>
-        </div>
-        {predictionsLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-xl bg-white/5" />
-            ))}
+      {/* Gold Tips */}
+      {goldTips.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Flame className="w-4 h-4 text-amber-400" />
+            <h2 className="text-lg font-semibold">Gold Tips</h2>
+            <Badge variant="secondary" className="bg-amber-500/10 text-amber-300 border-amber-500/20 text-[10px]">
+              {goldTips.length} Strong Bets
+            </Badge>
           </div>
-        ) : topPredictions.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <AnimatePresence mode="popLayout">
-              {topPredictions.map((pred: PredictionData) => (
+              {goldTips.slice(0, 6).map((tip) => (
                 <motion.div
-                  key={pred.id}
+                  key={tip.eventId}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <PunterMatchCard prediction={pred} ourPrediction={rawPredictionMap.get(pred.id)} />
+                  <TipCard tip={tip} />
                 </motion.div>
               ))}
             </AnimatePresence>
           </div>
-        ) : (
-          <Card className="glass-card p-8 text-center">
-            <p className="text-muted-foreground">No predictions available for today</p>
-          </Card>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Recommended Bets */}
-      {recommendedPredictions.length > 0 && (
+      {/* Silver Tips */}
+      {silverTips.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-4 h-4 text-amber-400" />
-            <h2 className="text-lg font-semibold">Recommended Bets</h2>
-            <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">
-              Punter Picks
+            <Crosshair className="w-4 h-4 text-cyan-300" />
+            <h2 className="text-lg font-semibold">Silver Tips</h2>
+            <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-300 border-cyan-500/20 text-[10px]">
+              {silverTips.length} Good Bets
             </Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {recommendedPredictions.slice(0, 4).map((pred: PredictionData) => (
-              <PunterMatchCard key={pred.id} prediction={pred} ourPrediction={rawPredictionMap.get(pred.id)} compact />
+            {silverTips.slice(0, 4).map((tip) => (
+              <TipCard key={tip.eventId} tip={tip} />
             ))}
           </div>
         </div>
+      )}
+
+      {/* No Tips */}
+      {!tipsLoading && topTips.length === 0 && (
+        <Card className="glass-card p-8 text-center">
+          <Crosshair className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground">No strong tips found right now</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            The punter only tips when there&apos;s value. Check back later.
+          </p>
+        </Card>
       )}
     </div>
   );

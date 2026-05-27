@@ -409,3 +409,135 @@ export interface OurValueBetData {
   valueRating: number;
   isActionable: boolean;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// PUNTER BRAIN v4 — Frontend Types
+//
+// PHILOSOPHY: Study everything. Pick ONE. Or walk away.
+// ═══════════════════════════════════════════════════════════════════════
+
+export type TipQuality = 'gold' | 'silver' | 'bronze' | 'skip';
+
+export interface TheTipData {
+  selection: string;
+  market: string;
+  odds: number | null;
+  confidence: number;
+  edge: number;
+  kellyStake: number;
+  quality: TipQuality;
+  reasoning: string;
+  riskLevel: 'very-low' | 'low' | 'medium' | 'high' | 'very-high';
+  isContrarian: boolean;
+  isSafePlay: boolean;
+  riskRewardScore: number;
+  marketsEvaluated: number;
+  rank: 1;
+}
+
+export interface H2HSummaryData {
+  homeWins: number;
+  draws: number;
+  awayWins: number;
+  totalMeetings: number;
+  avgGoals: number;
+  over25Rate: number;
+  bttsRate: number;
+  note: string;
+}
+
+export interface TeamLast5Data {
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsScored: number;
+  goalsConceded: number;
+  form: string;
+  cleanSheets: number;
+  failedToScore: number;
+}
+
+export interface FormSummaryData {
+  homeFormScore: number;
+  awayFormScore: number;
+  homeTrend: 'rising' | 'stable' | 'declining';
+  awayTrend: 'rising' | 'stable' | 'declining';
+  note: string;
+}
+
+export interface ManagerSummaryData {
+  homeManager: string | null;
+  awayManager: string | null;
+  homeStyle: string;
+  awayStyle: string;
+  tacticalMatchup: string;
+  goalExpectationModifier: number;
+  bttsModifier: number;
+}
+
+export interface GameplaySummaryData {
+  expectedStyle: 'open' | 'defensive' | 'asymmetric' | 'balanced';
+  expectedGoals: number;
+  expectedCards: 'low' | 'average' | 'high';
+  possessionExpectation: 'home-dominant' | 'balanced' | 'away-dominant';
+  note: string;
+}
+
+export interface LeagueContextData {
+  leagueId: number;
+  leagueName: string;
+  avgGoalsPerMatch: number;
+  homeWinRate: number;
+  drawRate: number;
+  awayWinRate: number;
+  over25Rate: number;
+  bttsRate: number;
+  competitiveness: 'high' | 'medium' | 'low';
+}
+
+export interface SituationalSummaryData {
+  isDerby: boolean;
+  homeMotivation: string;
+  awayMotivation: string;
+  weatherNote: string | null;
+  fatigueNote: string | null;
+  travelNote: string | null;
+  keyAbsences: string[];
+}
+
+export interface MatchAnalysisData {
+  h2h: H2HSummaryData;
+  last5: { home: TeamLast5Data; away: TeamLast5Data };
+  form: FormSummaryData;
+  manager: ManagerSummaryData;
+  gameplay: GameplaySummaryData;
+  league: LeagueContextData;
+  situation: SituationalSummaryData;
+  dataQuality: number;
+}
+
+export interface PunterTipV4Data {
+  eventId: number;
+  homeTeam: string;
+  awayTeam: string;
+  homeTeamId: number;
+  awayTeamId: number;
+  leagueId: number;
+  leagueName: string;
+  eventDate: string;
+  status: string;
+  tip: TheTipData | null;
+  skipReason: string | null;
+  analysis: MatchAnalysisData;
+  probabilities: {
+    homeWin: number;
+    draw: number;
+    awayWin: number;
+    homeXg: number;
+    awayXg: number;
+    over25: number;
+    bttsYes: number;
+  };
+  modelAgreement: number;
+  engineVersion: string;
+}
