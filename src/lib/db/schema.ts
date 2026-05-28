@@ -53,6 +53,19 @@ export async function initializeDatabase(): Promise<void> {
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_home_team ON events(home_team_id)`);
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_events_away_team ON events(away_team_id)`);
 
+  // ── V5: Add enrichment columns to events ──────────────────────────
+  const eventAlterations = [
+    `ALTER TABLE events ADD COLUMN home_team_logo TEXT DEFAULT ''`,
+    `ALTER TABLE events ADD COLUMN away_team_logo TEXT DEFAULT ''`,
+    `ALTER TABLE events ADD COLUMN league_name TEXT DEFAULT ''`,
+    `ALTER TABLE events ADD COLUMN enrichment_status TEXT DEFAULT 'none'`,
+    `ALTER TABLE events ADD COLUMN data_quality TEXT DEFAULT 'unknown'`,
+    `ALTER TABLE events ADD COLUMN meta TEXT`,
+  ];
+  for (const sql of eventAlterations) {
+    try { await db.execute(sql); } catch { /* column already exists */ }
+  }
+
   // ── EVENT STATS (xG, shots, possession per match) ────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS event_stats (
@@ -259,6 +272,17 @@ export async function initializeDatabase(): Promise<void> {
     )
   `);
 
+  // ── V5: Add enrichment columns to leagues ─────────────────────────
+  const leagueAlterations = [
+    `ALTER TABLE leagues ADD COLUMN logo_url TEXT DEFAULT ''`,
+    `ALTER TABLE leagues ADD COLUMN over_25_rate REAL DEFAULT 0.50`,
+    `ALTER TABLE leagues ADD COLUMN over_35_rate REAL DEFAULT 0.30`,
+    `ALTER TABLE leagues ADD COLUMN avg_goals_per_team REAL DEFAULT 1.35`,
+  ];
+  for (const sql of leagueAlterations) {
+    try { await db.execute(sql); } catch { /* column already exists */ }
+  }
+
   // ── STANDINGS (with xG) ────────────────────────────────────────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS standings (
@@ -302,6 +326,23 @@ export async function initializeDatabase(): Promise<void> {
       synced_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // ── V5: Add enrichment columns to teams ────────────────────────────
+  const teamAlterations = [
+    `ALTER TABLE teams ADD COLUMN logo_url TEXT DEFAULT ''`,
+    `ALTER TABLE teams ADD COLUMN avg_goals_scored REAL`,
+    `ALTER TABLE teams ADD COLUMN avg_goals_conceded REAL`,
+    `ALTER TABLE teams ADD COLUMN win_rate REAL`,
+    `ALTER TABLE teams ADD COLUMN btts_rate REAL`,
+    `ALTER TABLE teams ADD COLUMN over_25_rate REAL`,
+    `ALTER TABLE teams ADD COLUMN home_avg_scored REAL`,
+    `ALTER TABLE teams ADD COLUMN home_avg_conceded REAL`,
+    `ALTER TABLE teams ADD COLUMN away_avg_scored REAL`,
+    `ALTER TABLE teams ADD COLUMN away_avg_conceded REAL`,
+  ];
+  for (const sql of teamAlterations) {
+    try { await db.execute(sql); } catch { /* column already exists */ }
+  }
 
   // ── TEAM SQUADS ─────────────────────────────────────────────────
   await db.execute(`
@@ -510,5 +551,115 @@ export async function initializeDatabase(): Promise<void> {
 
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_engine_predictions_date ON engine_predictions(event_id)`);
 
-  console.log('[DB] Schema initialized — all tables ready');
+  // ══════════════════════════════════════════════════════════════════
+  //  V5: New tables for Phantom Engine
+  // ══════════════════════════════════════════════════════════════════
+
+  // ── HISTORICAL MATCHES (H2H, form, per-fixture context) ──────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS historical_matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fixture_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      home_team_id INTEGER,
+      away_team_id INTEGER,
+      home_team TEXT NOT NULL,
+      away_team TEXT NOT NULL,
+      home_score INTEGER,
+      away_score INTEGER,
+      home_goals INTEGER,
+      away_goals INTEGER,
+      home_xg REAL,
+      away_xg REAL,
+      date TEXT NOT NULL,
+      league_id INTEGER,
+      season TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (fixture_id) REFERENCES events(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_hist_matches_fixture_type ON historical_matches(fixture_id, type)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_hist_matches_date ON historical_matches(date)`);
+
+  // Add missing columns if historical_matches already existed with old schema
+  const histMatchAlterations = [
+    `ALTER TABLE historical_matches ADD COLUMN home_team_id INTEGER`,
+    `ALTER TABLE historical_matches ADD COLUMN away_team_id INTEGER`,
+    `ALTER TABLE historical_matches ADD COLUMN home_score INTEGER`,
+    `ALTER TABLE historical_matches ADD COLUMN away_score INTEGER`,
+  ];
+  for (const sql of histMatchAlterations) {
+    try { await db.execute(sql); } catch { /* column already exists */ }
+  }
+
+  // ── PREDICTIONS V2 (V5 Phantom Engine output) ────────────────────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS predictions_v2 (
+      event_id INTEGER PRIMARY KEY,
+      home_team TEXT NOT NULL DEFAULT '',
+      away_team TEXT NOT NULL DEFAULT '',
+      expected_goals_json TEXT,
+      best_pick_json TEXT,
+      backup_picks_json TEXT DEFAULT '[]',
+      no_safe_pick INTEGER DEFAULT 0,
+      calibrated_probs_json TEXT,
+      reason_codes_json TEXT DEFAULT '[]',
+      data_completeness REAL DEFAULT 0,
+      engine_version TEXT NOT NULL DEFAULT '5.0.0',
+      prediction_json TEXT,
+      model_version TEXT DEFAULT '5.0.0',
+      best_pick_market TEXT,
+      best_pick_selection TEXT,
+      best_pick_probability REAL,
+      best_pick_edge REAL,
+      best_pick_score REAL,
+      advisor_status TEXT,
+      no_safe_pick_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  // Add missing columns if table already existed with old schema
+  const predV2Alterations = [
+    `ALTER TABLE predictions_v2 ADD COLUMN home_team TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE predictions_v2 ADD COLUMN away_team TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE predictions_v2 ADD COLUMN expected_goals_json TEXT`,
+    `ALTER TABLE predictions_v2 ADD COLUMN best_pick_json TEXT`,
+    `ALTER TABLE predictions_v2 ADD COLUMN backup_picks_json TEXT DEFAULT '[]'`,
+    `ALTER TABLE predictions_v2 ADD COLUMN calibrated_probs_json TEXT`,
+    `ALTER TABLE predictions_v2 ADD COLUMN reason_codes_json TEXT DEFAULT '[]'`,
+    `ALTER TABLE predictions_v2 ADD COLUMN data_completeness REAL DEFAULT 0`,
+    `ALTER TABLE predictions_v2 ADD COLUMN engine_version TEXT NOT NULL DEFAULT '5.0.0'`,
+    `ALTER TABLE predictions_v2 ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))`,
+    `ALTER TABLE predictions_v2 ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))`,
+  ];
+  for (const sql of predV2Alterations) {
+    try { await db.execute(sql); } catch { /* column already exists */ }
+  }
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_predictions_v2_status ON predictions_v2(advisor_status)`);
+
+  // ── PREDICTION PICKS (individual market picks per fixture) ───────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS prediction_picks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      market TEXT NOT NULL,
+      selection TEXT NOT NULL,
+      odds REAL,
+      probability REAL,
+      edge REAL,
+      material_signature TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_prediction_picks_event ON prediction_picks(event_id)`);
+
+  console.log('[DB] Schema initialized — all tables ready (V5)');
 }

@@ -1,14 +1,12 @@
 'use client';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAppStore } from '@/lib/store';
-import { Dashboard } from '@/components/dashboard';
+import { DashboardV2 } from '@/components/dashboard-v2';
 import { Predictions } from '@/components/predictions';
 import { ValueBets } from '@/components/value-bets';
 import { LiveMatches } from '@/components/live-matches';
 import { Leagues } from '@/components/leagues';
 import { Bankroll } from '@/components/bankroll';
-import { MatchDetailPanel } from '@/components/match-detail-panel';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { NavTab } from '@/lib/types';
 import {
@@ -23,15 +21,6 @@ import {
   Brain,
 } from 'lucide-react';
 import { useState } from 'react';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30000,
-      retry: 2,
-    },
-  },
-});
 
 const navItems: Array<{
   id: NavTab;
@@ -84,7 +73,7 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard />;
+        return <DashboardV2 />;
       case 'predictions':
         return <Predictions />;
       case 'value-bets':
@@ -96,7 +85,7 @@ function AppContent() {
       case 'bankroll':
         return <Bankroll />;
       default:
-        return <Dashboard />;
+        return <DashboardV2 />;
     }
   };
 
@@ -279,10 +268,5 @@ function AppContent() {
 }
 
 export default function Home() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AppContent />
-      <MatchDetailPanel />
-    </QueryClientProvider>
-  );
+  return <AppContent />;
 }
