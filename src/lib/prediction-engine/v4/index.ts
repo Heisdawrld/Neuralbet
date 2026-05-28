@@ -86,14 +86,27 @@ interface LeagueAvgData {
   avgXga: number;
 }
 
-function dbTeamStatsToModel(s: TeamStatsDB, leagueId: number, leagueName: string) {
+function dbTeamStatsToModel(s: TeamStatsDB, leagueId: number, leagueName: string, leagueAvg?: LeagueAvgData) {
   const homeMatches = Math.ceil(s.played / 2);
   const awayMatches = s.played - homeMatches;
-  const homeGoalsScored = Math.round(s.gf * 0.57);
+
+  // Use league averages for home/away split if available (V4.2 fix)
+  const homeGoalShare = leagueAvg && leagueAvg.avgGoalsScored > 0
+    ? leagueAvg.avgHomeGoals / (leagueAvg.avgHomeGoals + leagueAvg.avgAwayGoals)
+    : 0.58; // Default: ~58% of goals scored at home globally
+
+  const awayGoalShare = 1 - homeGoalShare;
+
+  // Goals scored split — home team scores proportionally more at home
+  const homeGoalsScored = Math.round(s.gf * homeGoalShare);
   const awayGoalsScored = s.gf - homeGoalsScored;
-  const homeGoalsConceded = Math.round(s.ga * 0.43);
+
+  // Goals conceded: home team concedes AWAY-share of opponent's goals (less at home)
+  const homeGoalsConceded = Math.round(s.ga * awayGoalShare);
   const awayGoalsConceded = s.ga - homeGoalsConceded;
-  const homeWins = Math.max(0, Math.round(s.won * 0.6));
+
+  // Win/draw split: home teams win ~62% of their wins at home
+  const homeWins = Math.max(0, Math.round(s.won * 0.62));
   const homeDraws = Math.max(0, Math.round(s.drawn * 0.5));
   const homeLosses = Math.max(0, homeMatches - homeWins - homeDraws);
   const awayWins = Math.max(0, s.won - homeWins);
@@ -226,8 +239,8 @@ export async function generateV4Tips(params?: {
 
       const homeStatsDB = leagueStandings.find((t) => t.teamId === homeTeamId) ?? null;
       const awayStatsDB = leagueStandings.find((t) => t.teamId === awayTeamId) ?? null;
-      const homeStats = homeStatsDB ? dbTeamStatsToModel(homeStatsDB, leagueId, leagueName) : null;
-      const awayStats = awayStatsDB ? dbTeamStatsToModel(awayStatsDB, leagueId, leagueName) : null;
+      const homeStats = homeStatsDB ? dbTeamStatsToModel(homeStatsDB, leagueId, leagueName, leagueAvg) : null;
+      const awayStats = awayStatsDB ? dbTeamStatsToModel(awayStatsDB, leagueId, leagueName, leagueAvg) : null;
 
       // ── Load extra data from Turso ─────────────────────────────
       const [oddsRow, lineupRow, homeManagerRow, awayManagerRow, refereeRow, polymarketRow, h2hResult] = await Promise.all([
@@ -432,6 +445,19 @@ export async function generateV4Tips(params?: {
       drawProb /= totalProb;
       awayWinProb /= totalProb;
 
+      // ── V4.2 Fix 5: Minimum xG floor improvements ────────────────
+      // After all adjustments, ensure xG values are reasonable
+      // Prevents overly defensive estimates that cause Under 2.5 bias
+      homeExpectedGoals = Math.max(0.5, homeExpectedGoals);
+      awayExpectedGoals = Math.max(0.4, awayExpectedGoals);
+      // If total xG is very low (defensive mismatch), still maintain floor
+      const totalXg = homeExpectedGoals + awayExpectedGoals;
+      if (totalXg < 1.5) {
+        const scale = 1.5 / totalXg;
+        homeExpectedGoals *= scale;
+        awayExpectedGoals *= scale;
+      }
+
       // ── PHASE 6: Full Market Probabilities ─────────────────────
       const goalMatrix = buildGoalMatrix(
         Math.max(0.3, homeExpectedGoals),
@@ -576,6 +602,11 @@ function selectTheOneTip(
 
     // Boost for data quality
     score *= (0.5 + dataQuality * 0.5);
+
+    // V4.2 Fix 4: Information content bonus
+    // Tips that are far from base rates represent genuine insights
+    // Tips near base rates (e.g. Under 2.5 at 55%) get almost no bonus
+    score += computeInformationBonus(c);
 
     // Penalize for derby uncertainty
     if (isDerby) score *= 0.8;
@@ -761,12 +792,20 @@ function scoreCandidate(
   edgeThreshold: number,
   marketType: 'primary' | 'secondary' | 'exotic',
 ): CandidateBet[] {
+  // V4.2 Fix 3: Use market-specific edge thresholds
+  const effectiveThreshold = getMarketEdgeThreshold(marketName, selection, modelProb);
+  const threshold = Math.max(edgeThreshold, effectiveThreshold);
+
   const impProb = impliedProbability(odds);
   const edge = modelProb - impProb;
 
-  if (edge <= edgeThreshold) return [];
+  if (edge <= threshold) return [];
 
-  const confidence = Math.min(1, modelProb * 1.5);
+  // V4.2 Fix 2: Improved confidence calculation
+  // Confidence should reflect how DECISIVE the prediction is, not just probability magnitude
+  // A 55% Under 2.5 is not confident — it's barely above a coin flip
+  // A 72% Home Win IS confident — clear edge
+  const confidence = Math.min(1, Math.pow(modelProb, 1.3) * 1.2);
   const rawKelly = kellyCriterion(modelProb, odds);
   const riskMultiplier = edge > 0.1 ? 0.9 : edge > 0.05 ? 0.7 : 0.5;
   const kelly = clamp(rawKelly * 0.25 * riskMultiplier, 0, 0.1);
@@ -821,6 +860,72 @@ function buildCandidate(
     reasoning, marketType,
     safetyClass: riskLevel === 'high' ? 'risky' : marketType === 'exotic' ? 'moderate' : 'safe',
   };
+}
+
+// ── V4.2 Fix 3: Market-specific edge thresholds ──────────────────
+// Under markets naturally have higher base probability — require more edge
+// Over markets at moderate probability need less edge (they're harder to get right)
+
+function getMarketEdgeThreshold(marketName: string, selection: string, modelProb: number): number {
+  // Base threshold
+  let threshold = 0.05;
+
+  // Under markets naturally have higher base probability — require more edge
+  if (selection.startsWith('Under')) {
+    // The closer to 50/50, the lower the threshold needed
+    // But if prob > 60%, it's more meaningful
+    if (modelProb < 0.58) threshold = 0.08; // Require 8% edge for marginal Under calls
+    else threshold = 0.06;
+  }
+
+  // Over markets at moderate probability need less edge (they're harder to get right)
+  if (selection.startsWith('Over')) {
+    if (modelProb > 0.55) threshold = 0.04; // Over 2.5 above 55% is meaningful
+    else threshold = 0.06;
+  }
+
+  // 1X2 — standard threshold
+  if (marketName === '1X2') {
+    // Draw is hard to predict — require more edge
+    if (selection === 'Draw') threshold = 0.07;
+    else threshold = 0.05;
+  }
+
+  // Double Chance is inherently safer — lower threshold is fine
+  if (marketName === 'Double Chance') threshold = 0.04;
+
+  // BTTS — moderate threshold
+  if (marketName === 'BTTS') threshold = 0.05;
+
+  return threshold;
+}
+
+// ── V4.2 Fix 4: Information content scoring ──────────────────────
+// A tip of "Under 2.5 at 58%" has very little information content — it's close
+// to the base rate. A tip of "Home Win at 62%" when the home team is a
+// mid-table side has much more information content.
+
+function computeInformationBonus(candidate: CandidateBet): number {
+  // Base rates for common markets
+  const BASE_RATES: Record<string, number> = {
+    'Home Win': 0.45,
+    'Draw': 0.26,
+    'Away Win': 0.29,
+    'Over 1.5': 0.72,
+    'Over 2.5': 0.48,
+    'Under 2.5': 0.52,
+    'Over 3.5': 0.24,
+    'Yes': 0.48,  // BTTS
+  };
+
+  const baseRate = BASE_RATES[candidate.selection] || 0.5;
+  const deviation = Math.abs(candidate.modelProb - baseRate);
+
+  // The further from the base rate, the more "information content"
+  // Under 2.5 at 55% has deviation of 0.03 (almost no info)
+  // Home Win at 65% has deviation of 0.20 (strong info)
+  // Scale: 0-0.15 deviation → 0-0.15 bonus
+  return Math.min(0.15, deviation * 1.0);
 }
 
 function generateReasoning(
@@ -1034,7 +1139,15 @@ function buildMatchAnalysis(
 
 function calculateLeagueAvg(standings: TeamStatsDB[]): LeagueAvgData {
   if (standings.length === 0) {
-    return { avgHomeGoals: 1.35, avgAwayGoals: 1.15, avgGoalsScored: 1.25, avgGoalsConceded: 1.25, avgXgf: 1.25, avgXga: 1.25 };
+    // V4.2 Fix 6: Realistic global defaults instead of crude estimates
+    return {
+      avgHomeGoals: 1.45,    // Global average home goals
+      avgAwayGoals: 1.15,    // Global average away goals
+      avgGoalsScored: 1.30,  // (1.45 + 1.15) / 2
+      avgGoalsConceded: 1.30,
+      avgXgf: 1.35,
+      avgXga: 1.25,
+    };
   }
   const totalMatches = standings.reduce((s, t) => s + t.played, 0);
   const totalGoals = standings.reduce((s, t) => s + t.gf, 0);
