@@ -812,6 +812,227 @@ export async function syncLeagues(): Promise<number> {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// SYNC 10: Odds Movement (multi-bookmaker for steam detection)
+// ══════════════════════════════════════════════════════════════════
+
+export async function syncOddsMovement(eventIds?: number[]): Promise<number> {
+  const db = getTursoClient();
+  let synced = 0;
+
+  try {
+    if (!eventIds || eventIds.length === 0) {
+      const result = await db.execute(
+        `SELECT id FROM events WHERE status = 'notstarted' ORDER BY event_date ASC LIMIT 50`
+      );
+      eventIds = result.rows.map((r) => Number(r.id));
+    }
+
+    for (const eventId of eventIds) {
+      try {
+        // Fetch multi-bookmaker odds with movement data
+        const data = await fetchBSD<{
+          event_id: number;
+          markets?: Array<{
+            market: string;
+            outcome: string;
+            bookmaker_slug?: string;
+            bookmaker_name?: string;
+            decimal_odds?: number;
+            previous_decimal_odds?: number | null;
+            implied_probability?: number;
+            movement?: string;
+            is_max_quote?: boolean;
+            updated_at?: string;
+          }>;
+        }>(`events/${eventId}/odds/movement/`);
+
+        if (data?.markets && Array.isArray(data.markets)) {
+          // Clear old movement data for this event and insert fresh
+          await db.execute({
+            sql: `DELETE FROM odds_movement WHERE event_id = ?`,
+            args: [eventId],
+          });
+
+          for (const m of data.markets) {
+            if (m.decimal_odds && m.market && m.outcome) {
+              await db.execute({
+                sql: `INSERT INTO odds_movement (
+                  event_id, market, outcome, bookmaker_slug, bookmaker_name,
+                  decimal_odds, previous_decimal_odds, implied_probability,
+                  movement, is_max_quote, updated_at, synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+                args: [
+                  eventId,
+                  m.market,
+                  m.outcome,
+                  m.bookmaker_slug ?? null,
+                  m.bookmaker_name ?? null,
+                  m.decimal_odds,
+                  m.previous_decimal_odds ?? null,
+                  m.implied_probability ?? null,
+                  m.movement ?? null,
+                  m.is_max_quote ? 1 : 0,
+                  m.updated_at ?? null,
+                ],
+              });
+              synced++;
+            }
+          }
+        }
+      } catch {
+        // Odds movement data may not be available for all events
+      }
+    }
+
+    await updateSyncTracker('odds_movement', synced);
+  } catch (err: any) {
+    await updateSyncTracker('odds_movement', 0, 'error', err.message);
+  }
+
+  return synced;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SYNC 11: In-Play Events (live matches for the live page)
+// ══════════════════════════════════════════════════════════════════
+
+export async function syncInPlayEvents(): Promise<number> {
+  const db = getTursoClient();
+  let synced = 0;
+
+  try {
+    const data = await fetchBSD<{ results?: BsdEvent[] }>(
+      `events/?status=in&limit=200`
+    );
+    const events = data.results || [];
+
+    for (const e of events) {
+      try {
+        await db.execute({
+          sql: `INSERT INTO events (
+            id, league_id, home_team_id, home_team, away_team_id, away_team,
+            home_coach_id, away_coach_id, referee_id, venue_id,
+            event_date, status, round_number, period, current_minute,
+            home_score, away_score, home_score_ht, away_score_ht,
+            is_local_derby, is_neutral_ground, travel_distance_km,
+            weather_code, weather_description, weather_wind_speed, weather_temperature_c,
+            pitch_condition, attendance, synced_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET
+            status = excluded.status,
+            home_score = excluded.home_score,
+            away_score = excluded.away_score,
+            home_score_ht = excluded.home_score_ht,
+            away_score_ht = excluded.away_score_ht,
+            period = excluded.period,
+            current_minute = excluded.current_minute,
+            attendance = excluded.attendance,
+            synced_at = datetime('now')`,
+          args: [
+            e.id, e.league_id, e.home_team_id, e.home_team, e.away_team_id, e.away_team,
+            e.home_coach_id ?? null, e.away_coach_id ?? null, e.referee_id ?? null, e.venue_id ?? null,
+            e.event_date, e.status, e.round_number ?? null, e.period ?? null, e.current_minute ?? null,
+            e.home_score ?? 0, e.away_score ?? 0, e.home_score_ht ?? null, e.away_score_ht ?? null,
+            e.is_local_derby ? 1 : 0, e.is_neutral_ground ? 1 : 0, e.travel_distance_km ?? 0,
+            e.weather?.code ?? null, e.weather?.description ?? null, e.weather?.wind_speed ?? null, e.weather?.temperature_c ?? null,
+            e.pitch_condition ?? null, e.attendance ?? null,
+          ],
+        });
+        synced++;
+      } catch {
+        // Skip individual errors
+      }
+    }
+
+    await updateSyncTracker('events_inplay', synced);
+  } catch (err: any) {
+    await updateSyncTracker('events_inplay', 0, 'error', err.message);
+  }
+
+  return synced;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SYNC 12: Incidents (goals, cards, substitutions for match detail)
+// ══════════════════════════════════════════════════════════════════
+
+export async function syncIncidents(eventIds?: number[]): Promise<number> {
+  const db = getTursoClient();
+  let synced = 0;
+
+  try {
+    if (!eventIds || eventIds.length === 0) {
+      // Get events that are in-play or recently finished
+      const result = await db.execute(
+        `SELECT id FROM events WHERE status IN ('in', 'finished')
+         ORDER BY event_date DESC LIMIT 50`
+      );
+      eventIds = result.rows.map((r) => Number(r.id));
+    }
+
+    for (const eventId of eventIds) {
+      try {
+        const data = await fetchBSD<{
+          event_id: number;
+          incidents?: Array<{
+            incident_type: string;
+            minute?: number;
+            player_name?: string;
+            player_id?: number;
+            is_home?: boolean;
+            card_type?: string;
+            player_in?: string;
+            player_out?: string;
+            player_in_id?: number;
+            player_out_id?: number;
+          }>;
+        }>(`events/${eventId}/incidents/`);
+
+        if (data?.incidents && Array.isArray(data.incidents)) {
+          // Clear old incidents and insert fresh
+          await db.execute({
+            sql: `DELETE FROM event_incidents WHERE event_id = ?`,
+            args: [eventId],
+          });
+
+          for (const inc of data.incidents) {
+            await db.execute({
+              sql: `INSERT INTO event_incidents (
+                event_id, incident_type, minute, player_name, player_id,
+                is_home, card_type, player_in, player_out, player_in_id, player_out_id,
+                synced_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+              args: [
+                eventId,
+                inc.incident_type,
+                inc.minute ?? null,
+                inc.player_name ?? null,
+                inc.player_id ?? null,
+                inc.is_home ? 1 : 0,
+                inc.card_type ?? null,
+                inc.player_in ?? null,
+                inc.player_out ?? null,
+                inc.player_in_id ?? null,
+                inc.player_out_id ?? null,
+              ],
+            });
+            synced++;
+          }
+        }
+      } catch {
+        // Incidents may not be available for all events
+      }
+    }
+
+    await updateSyncTracker('incidents', synced);
+  } catch (err: any) {
+    await updateSyncTracker('incidents', 0, 'error', err.message);
+  }
+
+  return synced;
+}
+
+// ══════════════════════════════════════════════════════════════════
 // MASTER SYNC — Run all syncs in order
 // ══════════════════════════════════════════════════════════════════
 
@@ -824,6 +1045,7 @@ export async function runFullSync(): Promise<{
   managers: number;
   referees: number;
   leagues: number;
+  oddsMovement: number;
 }> {
   console.log('[SYNC] Starting full sync...');
 
@@ -849,11 +1071,14 @@ export async function runFullSync(): Promise<{
 
   console.log(`[SYNC] Odds: ${odds}, Lineups: ${lineups}, Managers: ${managers}, Referees: ${referees}`);
 
-  // Phase 4: Deep stats (slower, less critical)
+  // Phase 4: Deep stats + odds movement (slower, less critical)
+  const oddsMovement = await syncOddsMovement();
+  console.log(`[SYNC] Odds movement: ${oddsMovement}`);
   syncEventStats().then((n) => console.log(`[SYNC] Event stats: ${n}`));
   syncPolymarket().then((n) => console.log(`[SYNC] Polymarket: ${n}`));
+  syncIncidents().then((n) => console.log(`[SYNC] Incidents: ${n}`));
 
-  return { events, finishedEvents, standings, odds, lineups, managers, referees, leagues };
+  return { events, finishedEvents, standings, odds, lineups, managers, referees, leagues, oddsMovement };
 }
 
 // Quick sync for frequently changing data (called every few minutes)
@@ -861,10 +1086,14 @@ export async function runQuickSync(): Promise<{
   events: number;
   odds: number;
   lineups: number;
+  inPlay: number;
 }> {
-  const events = await syncEvents('notstarted');
-  const odds = await syncOdds();
-  const lineups = await syncLineups();
+  const [events, odds, lineups, inPlay] = await Promise.all([
+    syncEvents('notstarted'),
+    syncOdds(),
+    syncLineups(),
+    syncInPlayEvents(),
+  ]);
 
-  return { events, odds, lineups };
+  return { events, odds, lineups, inPlay };
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initializeDatabase } from '@/lib/db/schema';
-import { runFullSync, runQuickSync, syncEvents, syncStandings, syncOdds, syncLineups, syncManagers, syncReferees, syncEventStats, syncPolymarket, syncLeagues } from '@/lib/db/sync-engine';
+import { runFullSync, runQuickSync, syncEvents, syncStandings, syncOdds, syncLineups, syncManagers, syncReferees, syncEventStats, syncPolymarket, syncLeagues, syncOddsMovement, syncInPlayEvents, syncIncidents } from '@/lib/db/sync-engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ async function ensureDb(): Promise<void> {
 
 /**
  * POST /api/sync
- * Body: { type: 'full' | 'quick' | 'events' | 'standings' | 'odds' | 'lineups' | 'managers' | 'referees' | 'stats' | 'polymarket' | 'leagues' }
+ * Body: { type: 'full' | 'quick' | 'events' | 'standings' | 'odds' | 'lineups' | 'managers' | 'referees' | 'stats' | 'polymarket' | 'leagues' | 'odds_movement' | 'inplay' | 'incidents' }
  * 
  * Triggers data sync from BSD API → Turso database.
  */
@@ -62,6 +62,15 @@ export async function POST(request: NextRequest) {
         break;
       case 'leagues':
         result = { leagues: await syncLeagues() };
+        break;
+      case 'odds_movement':
+        result = { oddsMovement: await syncOddsMovement(body.eventIds) };
+        break;
+      case 'inplay':
+        result = { inPlay: await syncInPlayEvents() };
+        break;
+      case 'incidents':
+        result = { incidents: await syncIncidents(body.eventIds) };
         break;
       default:
         result = await runQuickSync();
