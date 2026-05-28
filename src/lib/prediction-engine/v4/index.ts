@@ -40,7 +40,7 @@ import { calculatePoissonPrediction } from '../poisson';
 import { calculateXgPrediction } from '../xg-model';
 import { calculateFormPrediction } from '../form';
 import { calculateAttackDefensePrediction } from '../attack-defense';
-import { updateEloRatings, calculateEloPrediction } from '../elo';
+import { updateEloRatings, calculateEloPrediction, getEloRatings } from '../elo';
 import {
   calculateOutcomeProbs, clamp, impliedProbability, calculateOverround,
   kellyCriterion, weightedStdDev, neutralPrediction, poissonProb,
@@ -249,7 +249,7 @@ export async function generateV4Tips(params?: {
       ]);
 
       // ── PHASE 1: Run 8 Statistical Models (same as v3) ────────
-      const eloRatings = require('../elo').getEloRatings();
+      const eloRatings = getEloRatings();
       const homeElo = eloRatings.get(homeTeamId);
       const awayElo = eloRatings.get(awayTeamId);
 
