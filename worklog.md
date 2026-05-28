@@ -45,3 +45,21 @@ Stage Summary:
 - Live URL still 404 — user needs to check Vercel dashboard and re-import project
 - UI/UX: Premium overhaul with live ticker, hero cards, 7-tab match panel, mobile bottom nav, xG scatter plots
 - Engine: V4.1 intelligence modules all wired, added odds movement + in-play + incidents sync pipelines
+---
+Task ID: 2
+Agent: Main Agent
+Task: Redesign dashboard to fixtures view + Fix V4 engine Under 2.5 bias
+
+Work Log:
+- Analyzed full codebase: dashboard.tsx, v4 engine, API routes, types, store
+- Identified root causes of Under 2.5 bias: crude home/away split, generous confidence formula, no market-specific edge thresholds, no information content scoring
+- Rewrote dashboard.tsx: predictions view → fixtures view with 7-day date pills, league grouping, compact match rows, form dots, probability bars, tip badges
+- Applied 6 engine fixes in v4/index.ts: league-aware splits, better confidence, market-specific thresholds, information bonus, xG floors, better league defaults
+- Bumped ENGINE_VERSION to 4.2.0
+- Build verified: compiles and deploys successfully
+- Pushed to GitHub: commit 90d947e
+
+Stage Summary:
+- Dashboard now shows fixtures/matches with 7-day window (not predictions)
+- Engine v4.2.0 should produce diverse tips (Home Win, Away Win, BTTS, Over 2.5, etc.) not just Under 2.5
+- Match detail panel already exists with 7 tabs (Prediction, Stats, H2H, Standings, Lineups, Odds, Analysis)
