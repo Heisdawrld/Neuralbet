@@ -23,8 +23,8 @@ import { buildMarketData, detectValueBets } from './intelligence/market';
 import { assessRisk, calculateBaseConfidence } from './intelligence/risk';
 import { buildGoalMatrix, calculateDerivedMarkets, clamp, neutralPrediction } from './utils';
 
-const BSD_API_KEY = process.env.BSD_API_KEY || '631a48f45a20b3352ea3863f8aa23baf610710e2';
-const BSD_BASE_URL = 'https://sports.bzzoiro.com/api/v2/';
+const BSD_API_KEY = process.env.BSD_API_KEY || '';
+const BSD_BASE_URL = process.env.BSD_API_BASE_URL || 'https://sports.bzzoiro.com/api/v2/';
 
 // ── In-memory cache with TTL ──────────────────────────────────────────
 interface CacheEntry<T> {

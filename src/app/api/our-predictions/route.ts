@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generatePredictions } from '@/lib/prediction-engine';
 
-// Cache for 5 minutes
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {

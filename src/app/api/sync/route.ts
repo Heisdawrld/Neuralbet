@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeDatabase } from '@/lib/db/schema';
 import { runFullSync, runQuickSync, syncEvents, syncStandings, syncOdds, syncLineups, syncManagers, syncReferees, syncEventStats, syncPolymarket, syncLeagues } from '@/lib/db/sync-engine';
 
+export const dynamic = 'force-dynamic';
+
 // Initialize DB on first call
 let dbInitialized = false;
 

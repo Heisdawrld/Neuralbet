@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateV4Tips } from '@/lib/prediction-engine/v4';
 import type { TipQuality } from '@/lib/prediction-engine/v4/types';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {

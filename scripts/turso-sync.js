@@ -1,10 +1,10 @@
 // Standalone sync script — populates Turso DB from BSD API
 const { createClient } = require('@libsql/client');
 
-const TURSO_URL = 'libsql://nueralbet-dawrld.aws-us-west-2.turso.io';
-const TURSO_TOKEN = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk5MDU3NDQsImlkIjoiMDE5ZTZhYTUtNzMwMS03MDA3LTk1ZDgtYjZlMjAzODI4OGJmIiwicmlkIjoiZDg4ZjFhNWYtMmE3ZS00YzBlLWIzZGQtNzcxNWRmNzkzZjcxIn0.5qeFGw8zFREgn4kQ2eKxmJ4jp-AdnE6SMCjCct5PM1TrD7Zak_zpV0Toeg_qREYpMDNoqCfx1FJRLE4z2FYLAg';
-const BSD_KEY = '631a48f45a20b3352ea3863f8aa23baf610710e2';
-const BSD_URL = 'https://sports.bzzoiro.com/api/v2/';
+const TURSO_URL = process.env.TURSO_DB_URL || 'file:db/neuralbet.db';
+const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN || '';
+const BSD_KEY = process.env.BSD_API_KEY || '';
+const BSD_URL = process.env.BSD_API_BASE_URL || 'https://sports.bzzoiro.com/api/v2/';
 
 const db = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
 const NOW = new Date().toISOString().replace('T', ' ').split('.')[0];

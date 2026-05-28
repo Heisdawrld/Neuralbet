@@ -17,8 +17,8 @@
 
 import { getTursoClient } from './turso-client';
 
-const BSD_API_KEY = process.env.BSD_API_KEY || '631a48f45a20b3352ea3863f8aa23baf610710e2';
-const BSD_BASE_URL = 'https://sports.bzzoiro.com/api/v2/';
+const BSD_API_KEY = process.env.BSD_API_KEY || '';
+const BSD_BASE_URL = process.env.BSD_API_BASE_URL || 'https://sports.bzzoiro.com/api/v2/';
 
 // ── BSD API Fetcher ───────────────────────────────────────────────
 async function fetchBSD<T>(path: string): Promise<T> {
