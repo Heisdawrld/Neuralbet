@@ -22,3 +22,26 @@ Stage Summary:
 - Gold tips all have real odds, real edges (5-29%), and real reasoning
 - Skip reasons: "Not enough data" (20x), "No odds available" (14x), "Edge too small" (3x), "Dead rubber" (1x)
 - Architecture: BSD API → Turso DB (via sync) → v4 Engine → One Tip per match
+---
+Task ID: 1
+Agent: Main Agent
+Task: Diagnose live URL 404 and fix deployment, then execute UI/UX overhaul + engine upgrades
+
+Work Log:
+- Fetched live URL https://neuralbet-lovat.vercel.app/ — confirmed 404: NOT_FOUND on ALL routes
+- Built locally successfully — routes render correctly
+- Fixed critical CommonJS require() bug in v4 engine (line 252, replaced with proper ESM import)
+- Added vercel.json for explicit framework configuration
+- Pushed fix commit da77d02 to trigger Vercel rebuild
+- 404 persists — identified as Vercel project configuration issue (project likely unlinked/deleted)
+- Launched full UI/UX overhaul via subagent — dashboard upgrade, match cards, match detail panel, live page, leagues, bankroll, mobile bottom nav
+- Added missing sync engines: odds movement (steam detection), in-play events, incidents
+- Updated sync API route with new sync types
+- Improved quick sync to include in-play events in parallel
+- All changes build successfully locally
+
+Stage Summary:
+- 3 commits pushed: da77d02 (require bug fix + vercel.json), e83e794 (UI/UX overhaul), fc71d7e (engine sync upgrades)
+- Live URL still 404 — user needs to check Vercel dashboard and re-import project
+- UI/UX: Premium overhaul with live ticker, hero cards, 7-tab match panel, mobile bottom nav, xG scatter plots
+- Engine: V4.1 intelligence modules all wired, added odds movement + in-play + incidents sync pipelines
