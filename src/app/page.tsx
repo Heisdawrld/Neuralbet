@@ -219,7 +219,7 @@ function AppContent() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto md:pb-0 pb-16">
         {/* Mobile Header */}
         <div className="md:hidden sticky top-0 z-40 bg-[#0a0e1a]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center justify-between">
           <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 rounded-lg hover:bg-white/5">
@@ -249,6 +249,31 @@ function AppContent() {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0d1117]/95 backdrop-blur-lg border-t border-white/[0.06] safe-area-bottom">
+        <div className="flex items-center justify-around px-2 py-1.5">
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNavClick(item.id)}
+                className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 rounded-lg transition-all min-w-[56px] ${
+                  isActive ? 'bottom-nav-active' : 'text-slate-500 active:text-slate-300'
+                }`}
+              >
+                <span className={`transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  {item.icon}
+                </span>
+                <span className={`text-[9px] font-medium ${isActive ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import {
   Clock, Shield, ChevronDown, Brain, Crosshair,
   Flame, TrendingUp, Minus, Eye,
   Swords, Thermometer, Wind, Users, BarChart3,
-  AlertTriangle, CheckCircle2, Zap,
+  AlertTriangle, CheckCircle2, Zap, Target,
 } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -88,6 +88,28 @@ const RISK_BG: Record<string, string> = {
   'very-high': 'bg-red-500/10 border-red-500/20',
 };
 
+// ── Mini Confidence Ring ────────────────────────────────────────────
+
+function MiniConfidenceRing({ value, size = 28 }: { value: number; size?: number }) {
+  const pct = Math.round(value * 100);
+  const r = (size - 4) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - value);
+  const color = pct > 70 ? '#10b981' : pct > 40 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2.5} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={2.5} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="donut-animate" />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-mono font-bold text-white">
+        {pct}
+      </span>
+    </div>
+  );
+}
+
 // ── Form Letter Component ────────────────────────────────────────────
 
 function FormLetter({ letter }: { letter: string }) {
@@ -122,25 +144,6 @@ function MiniEdgeMeter({ value, max = 0.15 }: { value: number; max?: number }) {
   );
 }
 
-// ── Mini Confidence Meter ────────────────────────────────────────────
-
-function MiniConfidenceMeter({ value }: { value: number }) {
-  const pct = Math.round(value * 100);
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-          className={`h-full rounded-full ${pct > 70 ? 'bg-emerald-500' : pct > 40 ? 'bg-amber-500' : 'bg-red-500'}`}
-        />
-      </div>
-      <span className="text-[9px] font-mono text-muted-foreground">{pct}%</span>
-    </div>
-  );
-}
-
 // ── Main TipCard Component ──────────────────────────────────────────
 
 interface TipCardProps {
@@ -153,14 +156,19 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
   const hasTip = tip.tip !== null;
   const quality: TipQuality = tip.tip?.quality ?? 'skip';
   const config = QUALITY_CONFIG[quality];
+  const isSkip = quality === 'skip';
 
   const handleClick = (e: React.MouseEvent) => {
+    if (isSkip) {
+      setShowAnalysis(!showAnalysis);
+      return;
+    }
     const target = e.target as HTMLElement;
     const isTeamsArea = target.closest('[data-teams-area]');
     if (isTeamsArea && onMatchClick) {
       onMatchClick();
     } else if (onMatchClick) {
-      setShowAnalysis(!showAnalysis);
+      onMatchClick();
     } else {
       setShowAnalysis(!showAnalysis);
     }
@@ -169,7 +177,7 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
   return (
     <Card
       className={`glass-card-premium hover-lift transition-all duration-300 cursor-pointer ${config.glow} ${config.ring} ${
-        !hasTip ? 'opacity-50' : ''
+        isSkip ? 'opacity-60 hover:opacity-80' : ''
       }`}
       onClick={handleClick}
     >
@@ -192,6 +200,12 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
                 <Clock className="w-3 h-3" />
                 {format(new Date(tip.eventDate), 'HH:mm')}
               </span>
+              {hasTip && (
+                <Badge className={`${config.bg} ${config.color} ${config.border} border text-[9px] px-1.5 py-0 flex items-center gap-0.5`}>
+                  {config.icon}
+                  {config.label}
+                </Badge>
+              )}
             </div>
 
             {/* Teams — Clickable area */}
@@ -210,57 +224,48 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
             </div>
           </div>
 
-          {/* ── THE TIP — One-line prominent ──────────────────── */}
+          {/* ── THE TIP — One-line display + confidence ring ──── */}
           {hasTip && tip.tip ? (
-            <div className="flex-shrink-0 text-right min-w-[110px]">
-              <Badge className={`${config.bg} ${config.color} ${config.border} border text-[11px] px-2.5 py-0.5 flex items-center gap-1 ml-auto mb-1.5`}>
-                {config.icon}
-                {config.label}
-              </Badge>
-              {/* One-line tip: "Over 2.5 Goals @ 1.85" */}
-              <p className="text-sm font-bold text-white leading-tight mb-0.5">
-                {tip.tip.selection}
-              </p>
-              <p className="text-[10px] text-muted-foreground mb-1">
-                {tip.tip.market}
-              </p>
-              {tip.tip.odds && (
-                <p className={`text-xl font-mono font-bold ${config.oddsColor}`}>
-                  @{tip.tip.odds.toFixed(2)}
+            <div className="flex-shrink-0 flex items-center gap-2">
+              <MiniConfidenceRing value={tip.tip.confidence} size={32} />
+              <div className="text-right min-w-[100px]">
+                <p className="text-sm font-bold text-white leading-tight mb-0.5">
+                  {tip.tip.selection}
                 </p>
-              )}
+                {tip.tip.odds && (
+                  <p className={`text-lg font-mono font-bold ${config.oddsColor}`}>
+                    @{tip.tip.odds.toFixed(2)}
+                  </p>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="flex-shrink-0 text-right min-w-[110px]">
-              <Badge className="bg-slate-500/10 text-slate-500 border-slate-500/20 border text-[11px] px-2.5 py-0.5 flex items-center gap-1 ml-auto mb-1">
-                <Minus className="w-3 h-3" />
-                SKIP
-              </Badge>
-              <p className="text-[11px] text-slate-500 italic mt-1 max-w-[100px]">
-                {tip.skipReason}
-              </p>
+            <div className="flex-shrink-0 flex items-center gap-2">
+              <Minus className="w-5 h-5 text-slate-600" />
+              <div className="text-right">
+                <Badge className="bg-slate-500/10 text-slate-500 border-slate-500/20 border text-[10px] px-2 py-0 flex items-center gap-1">
+                  SKIP
+                </Badge>
+              </div>
             </div>
           )}
         </div>
 
-        {/* ── Edge & Confidence Meters ───────────────────────── */}
+        {/* ── One-line tip display ───────────────────────────── */}
         {hasTip && tip.tip && (
-          <div className="mt-3 flex items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Edge</span>
-              <MiniEdgeMeter value={tip.tip.edge} />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Conf</span>
-              <MiniConfidenceMeter value={tip.tip.confidence} />
-            </div>
+          <div className="mt-2 flex items-center gap-2 text-[11px]">
+            <span className="text-muted-foreground">{tip.tip.market}</span>
+            <span className="text-muted-foreground/40">@</span>
+            <span className={`font-mono font-bold ${config.oddsColor}`}>
+              {tip.tip.odds?.toFixed(2)}
+            </span>
+            <span className="text-emerald-400 font-mono">+{(tip.tip.edge * 100).toFixed(1)}% edge</span>
             <div className="ml-auto flex items-center gap-2">
               {/* Risk */}
               <Badge className={`${RISK_BG[tip.tip.riskLevel]} ${RISK_COLORS[tip.tip.riskLevel]} text-[9px] px-1.5 py-0 flex items-center gap-0.5`}>
                 <Shield className="w-2.5 h-2.5" />
                 {tip.tip.riskLevel.replace('-', ' ')}
               </Badge>
-              {/* Safe/Contrarian flags */}
               {tip.tip.isSafePlay && (
                 <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[9px] px-1.5 py-0 flex items-center gap-0.5">
                   <CheckCircle2 className="w-2.5 h-2.5" />
@@ -276,20 +281,30 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
           </div>
         )}
 
-        {/* ── Reasoning ──────────────────────────────────────── */}
-        {hasTip && tip.tip && (
-          <p className="mt-2 text-[11px] text-muted-foreground italic flex items-start gap-1.5">
-            <Brain className="w-3 h-3 mt-0.5 flex-shrink-0 text-violet-400" />
-            &ldquo;{tip.tip.reasoning}&rdquo;
+        {/* ── Skip reason (one-line) ─────────────────────────── */}
+        {!hasTip && tip.skipReason && (
+          <p className="mt-1 text-[10px] text-slate-500 italic truncate">
+            {tip.skipReason}
           </p>
         )}
 
+        {/* ── Edge Meter ─────────────────────────────────────── */}
+        {hasTip && tip.tip && (
+          <div className="mt-2 flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Edge</span>
+              <MiniEdgeMeter value={tip.tip.edge} />
+            </div>
+            <span className="text-[9px] text-muted-foreground ml-auto">
+              Model agreement: {Math.round(tip.modelAgreement * 100)}%
+            </span>
+          </div>
+        )}
+
         {/* ── Expand Toggle ────────────────────────────────────── */}
-        <div className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
+        <div className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
           <ChevronDown className={`w-3 h-3 transition-transform ${showAnalysis ? 'rotate-180' : ''}`} />
-          <Swords className="w-3 h-3" />
           <span>Full Analysis</span>
-          <span className="ml-auto text-[9px]">Model agreement: {Math.round(tip.modelAgreement * 100)}%</span>
         </div>
 
         {/* ── Expanded Analysis Panel ──────────────────────────── */}
@@ -303,6 +318,14 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
               className="overflow-hidden"
             >
               <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
+                {/* Reasoning */}
+                {hasTip && tip.tip && (
+                  <p className="text-[11px] text-muted-foreground italic flex items-start gap-1.5">
+                    <Brain className="w-3 h-3 mt-0.5 flex-shrink-0 text-violet-400" />
+                    &ldquo;{tip.tip.reasoning}&rdquo;
+                  </p>
+                )}
+
                 {/* H2H */}
                 <AnalysisSection icon={<Swords className="w-3 h-3" />} title="Head to Head">
                   {tip.analysis.h2h.totalMeetings > 0 ? (
@@ -364,7 +387,6 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
                     <div className="flex gap-2 text-[9px]">
                       <span className="text-cyan-400">{tip.analysis.gameplay.expectedStyle} game</span>
                       <span className="text-slate-400">~{tip.analysis.gameplay.expectedGoals} goals expected</span>
-                      <span className="text-slate-400">{tip.analysis.gameplay.expectedCards} cards</span>
                     </div>
                   </div>
                 </AnalysisSection>
@@ -386,11 +408,6 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
                         {tip.analysis.situation.fatigueNote}
                       </Badge>
                     )}
-                    {tip.analysis.situation.travelNote && (
-                      <Badge className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-[9px] px-1.5 py-0">
-                        {tip.analysis.situation.travelNote}
-                      </Badge>
-                    )}
                     {tip.analysis.situation.keyAbsences.length > 0 && (
                       <Badge className="bg-red-500/10 text-red-400 border-red-500/20 text-[9px] px-1.5 py-0 flex items-center gap-1">
                         <AlertTriangle className="w-2.5 h-2.5" />
@@ -403,18 +420,6 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
                     <Badge className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-[9px] px-1.5 py-0">
                       Away: {tip.analysis.situation.awayMotivation}
                     </Badge>
-                  </div>
-                </AnalysisSection>
-
-                {/* League Context */}
-                <AnalysisSection icon={<BarChart3 className="w-3 h-3" />} title="League Context">
-                  <div className="flex gap-3 text-[9px] text-slate-400">
-                    <span>Avg {tip.analysis.league.avgGoalsPerMatch} goals/match</span>
-                    <span>O2.5: {Math.round(tip.analysis.league.over25Rate * 100)}%</span>
-                    <span>BTTS: {Math.round(tip.analysis.league.bttsRate * 100)}%</span>
-                    <span className={tip.analysis.league.competitiveness === 'high' ? 'text-amber-400' : 'text-slate-400'}>
-                      {tip.analysis.league.competitiveness} competitiveness
-                    </span>
                   </div>
                 </AnalysisSection>
 

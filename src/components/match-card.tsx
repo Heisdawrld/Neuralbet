@@ -7,7 +7,7 @@ import { ProbabilityBar } from './probability-bar';
 import { EnginePanel } from './engine-panel';
 import type { PredictionData, OurPredictionData, TipQuality } from '@/lib/types';
 import { format } from 'date-fns';
-import { Clock, Zap, Radio } from 'lucide-react';
+import { Clock, Zap, Radio, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 
@@ -52,9 +52,6 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick,
   };
 
   const handleCardClick = () => {
-    if (ourPrediction) {
-      setShowEngine(!showEngine);
-    }
     onClick?.();
   };
 
@@ -67,34 +64,34 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick,
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          {/* League & Time */}
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className="text-[11px] text-muted-foreground truncate">
+          {/* League, Time, Quality — all in one compact header */}
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            <span className="text-[10px] text-muted-foreground truncate">
               {prediction.match.leagueName || 'Unknown League'}
             </span>
-            <span className="text-muted-foreground/40">•</span>
-            <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Clock className="w-3 h-3" />
+            <span className="text-muted-foreground/30">·</span>
+            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+              <Clock className="w-2.5 h-2.5" />
               {format(new Date(prediction.match.eventDate), 'HH:mm')}
             </span>
             {isLive && (
-              <span className="flex items-center gap-1.5 text-[11px] text-emerald-400">
-                <span className="relative flex h-2 w-2">
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400">
+                <span className="relative flex h-1.5 w-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
                 </span>
                 LIVE
               </span>
             )}
+            {getQualityBadge()}
             {ourPrediction && (
               <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 text-[9px] px-1.5 py-0">
                 Ensemble
               </Badge>
             )}
-            {getQualityBadge()}
           </div>
 
-          {/* Teams */}
+          {/* Teams + Scores in one row */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium truncate">
@@ -118,9 +115,30 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick,
             </div>
           </div>
 
-          {/* Probabilities */}
+          {/* One-line xG + Probabilities summary */}
+          <div className="flex items-center gap-3 mt-2 text-[10px] font-mono text-muted-foreground">
+            {prediction.homeXg != null && (
+              <>
+                <span>xG {prediction.homeXg.toFixed(1)}-{prediction.awayXg?.toFixed(1)}</span>
+                <span className="text-muted-foreground/30">·</span>
+              </>
+            )}
+            <span>
+              {Math.round(prediction.homeWinProb * 100)}%-
+              {Math.round(prediction.drawProb * 100)}%-
+              {Math.round(prediction.awayWinProb * 100)}%
+            </span>
+            {prediction.mostLikelyScore && (
+              <>
+                <span className="text-muted-foreground/30">·</span>
+                <span className="text-slate-500">{prediction.mostLikelyScore}</span>
+              </>
+            )}
+          </div>
+
+          {/* Probabilities bar — compact */}
           {!compact && (
-            <div className="mt-3">
+            <div className="mt-2">
               <ProbabilityBar
                 home={prediction.homeWinProb}
                 draw={prediction.drawProb}
@@ -130,25 +148,11 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick,
               />
             </div>
           )}
-
-          {/* Expected Goals */}
-          {!compact && (
-            <div className="flex items-center gap-4 mt-2 text-[11px] text-muted-foreground font-mono">
-              <span>xG: {prediction.homeXg?.toFixed(2)}</span>
-              <span>-</span>
-              <span>{prediction.awayXg?.toFixed(2)}</span>
-              {prediction.mostLikelyScore && (
-                <span className="ml-auto text-slate-500">
-                  Score: {prediction.mostLikelyScore}
-                </span>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Confidence Meter */}
         <div className="flex-shrink-0">
-          <ConfidenceMeter value={prediction.confidence} size={compact ? 40 : 52} showLabel={!compact} />
+          <ConfidenceMeter value={prediction.confidence} size={compact ? 36 : 48} showLabel={!compact} />
         </div>
       </div>
 
@@ -163,17 +167,6 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick,
             {getRecommendationLabel() || 'Recommended'}
           </Badge>
         </div>
-      )}
-
-      {/* Engine Breakdown Panel */}
-      {ourPrediction && showEngine && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <EnginePanel prediction={ourPrediction} />
-        </motion.div>
       )}
     </Card>
   );
