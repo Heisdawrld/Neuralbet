@@ -5,22 +5,39 @@ import { Badge } from '@/components/ui/badge';
 import { ConfidenceMeter } from './confidence-meter';
 import { ProbabilityBar } from './probability-bar';
 import { EnginePanel } from './engine-panel';
-import type { PredictionData, OurPredictionData } from '@/lib/types';
+import type { PredictionData, OurPredictionData, TipQuality } from '@/lib/types';
 import { format } from 'date-fns';
-import { Clock, Zap } from 'lucide-react';
+import { Clock, Zap, Radio } from 'lucide-react';
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 
 interface MatchCardProps {
   prediction: PredictionData;
   ourPrediction?: OurPredictionData;
   compact?: boolean;
   onClick?: () => void;
+  quality?: TipQuality;
 }
 
-export function MatchCard({ prediction, ourPrediction, compact = false, onClick }: MatchCardProps) {
+export function MatchCard({ prediction, ourPrediction, compact = false, onClick, quality }: MatchCardProps) {
   const isLive = prediction.match.status === 'in' || prediction.match.status === 'live';
   const isRecommended = prediction.isRecommended;
   const [showEngine, setShowEngine] = useState(false);
+
+  // Determine glow class based on quality
+  const getGlowClass = () => {
+    if (quality === 'gold') return 'gold-glow';
+    if (quality === 'silver') return 'silver-glow';
+    if (quality === 'bronze') return 'bronze-glow';
+    return '';
+  };
+
+  const getQualityBadge = () => {
+    if (quality === 'gold') return <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 text-[9px] px-1.5 py-0">GOLD</Badge>;
+    if (quality === 'silver') return <Badge className="bg-cyan-500/15 text-cyan-300 border-cyan-500/20 text-[9px] px-1.5 py-0">SILVER</Badge>;
+    if (quality === 'bronze') return <Badge className="bg-slate-500/15 text-slate-300 border-slate-500/20 text-[9px] px-1.5 py-0">BRONZE</Badge>;
+    return null;
+  };
 
   const getRecommendationLabel = () => {
     const recs = prediction.recommendations;
@@ -43,7 +60,7 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick 
 
   return (
     <Card
-      className={`glass-card hover-glow cursor-pointer transition-all duration-300 ${
+      className={`glass-card-premium hover-lift transition-all duration-300 cursor-pointer ${getGlowClass()} ${
         compact ? 'p-3' : 'p-4'
       }`}
       onClick={handleCardClick}
@@ -61,8 +78,11 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick 
               {format(new Date(prediction.match.eventDate), 'HH:mm')}
             </span>
             {isLive && (
-              <span className="flex items-center gap-1 text-[11px] text-neon-cyan">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 live-pulse" />
+              <span className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                </span>
                 LIVE
               </span>
             )}
@@ -71,6 +91,7 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick 
                 Ensemble
               </Badge>
             )}
+            {getQualityBadge()}
           </div>
 
           {/* Teams */}
@@ -146,7 +167,13 @@ export function MatchCard({ prediction, ourPrediction, compact = false, onClick 
 
       {/* Engine Breakdown Panel */}
       {ourPrediction && showEngine && (
-        <EnginePanel prediction={ourPrediction} />
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <EnginePanel prediction={ourPrediction} />
+        </motion.div>
       )}
     </Card>
   );

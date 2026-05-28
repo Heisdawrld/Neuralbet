@@ -6,7 +6,7 @@ import type { PunterTipV4Data, TheTipData, TipQuality } from '@/lib/types';
 import { format } from 'date-fns';
 import {
   Clock, Shield, ChevronDown, Brain, Crosshair,
-  Flame, TrendingUp, Minus, X, Eye,
+  Flame, TrendingUp, Minus, Eye,
   Swords, Thermometer, Wind, Users, BarChart3,
   AlertTriangle, CheckCircle2, Zap,
 } from 'lucide-react';
@@ -23,6 +23,8 @@ const QUALITY_CONFIG: Record<TipQuality, {
   border: string;
   glow: string;
   ring: string;
+  gradient: string;
+  oddsColor: string;
 }> = {
   gold: {
     icon: <Flame className="w-4 h-4" />,
@@ -30,8 +32,10 @@ const QUALITY_CONFIG: Record<TipQuality, {
     color: 'text-amber-300',
     bg: 'bg-amber-500/20',
     border: 'border-amber-500/40',
-    glow: 'shadow-amber-500/10',
+    glow: 'gold-glow',
     ring: 'ring-1 ring-amber-500/30',
+    gradient: 'from-amber-500/10 via-transparent to-amber-500/5',
+    oddsColor: 'text-amber-400',
   },
   silver: {
     icon: <Crosshair className="w-4 h-4" />,
@@ -39,8 +43,10 @@ const QUALITY_CONFIG: Record<TipQuality, {
     color: 'text-cyan-300',
     bg: 'bg-cyan-500/15',
     border: 'border-cyan-500/30',
-    glow: 'shadow-cyan-500/10',
+    glow: 'silver-glow',
     ring: 'ring-1 ring-cyan-500/20',
+    gradient: 'from-cyan-500/8 via-transparent to-cyan-500/4',
+    oddsColor: 'text-cyan-400',
   },
   bronze: {
     icon: <TrendingUp className="w-4 h-4" />,
@@ -48,17 +54,21 @@ const QUALITY_CONFIG: Record<TipQuality, {
     color: 'text-slate-300',
     bg: 'bg-slate-500/15',
     border: 'border-slate-500/30',
-    glow: '',
-    ring: '',
+    glow: 'bronze-glow',
+    ring: 'ring-1 ring-slate-500/15',
+    gradient: 'from-slate-500/5 via-transparent to-slate-500/3',
+    oddsColor: 'text-slate-300',
   },
   skip: {
-    icon: <X className="w-4 h-4" />,
+    icon: <Minus className="w-4 h-4" />,
     label: 'SKIP',
     color: 'text-slate-500',
     bg: 'bg-slate-500/10',
     border: 'border-slate-500/20',
     glow: '',
     ring: '',
+    gradient: '',
+    oddsColor: 'text-slate-500',
   },
 };
 
@@ -93,6 +103,44 @@ function FormLetter({ letter }: { letter: string }) {
   );
 }
 
+// ── Mini Edge Meter ──────────────────────────────────────────────────
+
+function MiniEdgeMeter({ value, max = 0.15 }: { value: number; max?: number }) {
+  const pct = Math.min(100, (value / max) * 100);
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
+        />
+      </div>
+      <span className="text-[9px] font-mono text-emerald-400">+{(value * 100).toFixed(1)}%</span>
+    </div>
+  );
+}
+
+// ── Mini Confidence Meter ────────────────────────────────────────────
+
+function MiniConfidenceMeter({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className={`h-full rounded-full ${pct > 70 ? 'bg-emerald-500' : pct > 40 ? 'bg-amber-500' : 'bg-red-500'}`}
+        />
+      </div>
+      <span className="text-[9px] font-mono text-muted-foreground">{pct}%</span>
+    </div>
+  );
+}
+
 // ── Main TipCard Component ──────────────────────────────────────────
 
 interface TipCardProps {
@@ -107,14 +155,11 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
   const config = QUALITY_CONFIG[quality];
 
   const handleClick = (e: React.MouseEvent) => {
-    // If clicking on the teams section (left side), open match panel
-    // If clicking elsewhere, toggle analysis
     const target = e.target as HTMLElement;
     const isTeamsArea = target.closest('[data-teams-area]');
     if (isTeamsArea && onMatchClick) {
       onMatchClick();
     } else if (onMatchClick) {
-      // Double click opens match panel, single click toggles analysis
       setShowAnalysis(!showAnalysis);
     } else {
       setShowAnalysis(!showAnalysis);
@@ -123,12 +168,17 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
 
   return (
     <Card
-      className={`glass-card hover-glow transition-all duration-300 cursor-pointer ${config.ring} ${config.glow} ${
+      className={`glass-card-premium hover-lift transition-all duration-300 cursor-pointer ${config.glow} ${config.ring} ${
         !hasTip ? 'opacity-50' : ''
       }`}
       onClick={handleClick}
     >
-      <div className="p-4">
+      {/* Gradient overlay for quality */}
+      {hasTip && config.gradient && (
+        <div className={`absolute inset-0 bg-gradient-to-br ${config.gradient} pointer-events-none rounded-xl`} />
+      )}
+
+      <div className="relative p-4">
         {/* ── Header Row ─────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -144,11 +194,11 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
               </span>
             </div>
 
-            {/* Teams */}
+            {/* Teams — Clickable area */}
             <div className="flex items-center justify-between" data-teams-area>
               <div className="space-y-0.5">
-                <p className="text-sm font-semibold truncate max-w-[160px]">{tip.homeTeam}</p>
-                <p className="text-sm font-semibold truncate max-w-[160px]">{tip.awayTeam}</p>
+                <p className="text-sm font-semibold truncate max-w-[160px] hover:text-emerald-300 transition-colors">{tip.homeTeam}</p>
+                <p className="text-sm font-semibold truncate max-w-[160px] hover:text-emerald-300 transition-colors">{tip.awayTeam}</p>
               </div>
 
               {/* Mini probability bars */}
@@ -160,29 +210,30 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
             </div>
           </div>
 
-          {/* ── THE TIP ──────────────────────────────────────── */}
+          {/* ── THE TIP — One-line prominent ──────────────────── */}
           {hasTip && tip.tip ? (
-            <div className="flex-shrink-0 text-right min-w-[100px]">
-              <Badge className={`${config.bg} ${config.color} ${config.border} border text-[11px] px-2.5 py-0.5 flex items-center gap-1 ml-auto mb-1`}>
+            <div className="flex-shrink-0 text-right min-w-[110px]">
+              <Badge className={`${config.bg} ${config.color} ${config.border} border text-[11px] px-2.5 py-0.5 flex items-center gap-1 ml-auto mb-1.5`}>
                 {config.icon}
                 {config.label}
               </Badge>
-              <p className="text-base font-bold text-white leading-tight">
+              {/* One-line tip: "Over 2.5 Goals @ 1.85" */}
+              <p className="text-sm font-bold text-white leading-tight mb-0.5">
                 {tip.tip.selection}
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground mb-1">
                 {tip.tip.market}
               </p>
               {tip.tip.odds && (
-                <p className="text-lg font-mono font-bold text-emerald-400 mt-0.5">
-                  {tip.tip.odds.toFixed(2)}
+                <p className={`text-xl font-mono font-bold ${config.oddsColor}`}>
+                  @{tip.tip.odds.toFixed(2)}
                 </p>
               )}
             </div>
           ) : (
-            <div className="flex-shrink-0 text-right min-w-[100px]">
+            <div className="flex-shrink-0 text-right min-w-[110px]">
               <Badge className="bg-slate-500/10 text-slate-500 border-slate-500/20 border text-[11px] px-2.5 py-0.5 flex items-center gap-1 ml-auto mb-1">
-                <X className="w-3 h-3" />
+                <Minus className="w-3 h-3" />
                 SKIP
               </Badge>
               <p className="text-[11px] text-slate-500 italic mt-1 max-w-[100px]">
@@ -192,33 +243,26 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
           )}
         </div>
 
-        {/* ── Reasoning & Stats Row ───────────────────────────── */}
+        {/* ── Edge & Confidence Meters ───────────────────────── */}
         {hasTip && tip.tip && (
-          <div className="mt-3 space-y-2">
-            {/* Reasoning */}
-            <p className="text-[11px] text-muted-foreground italic flex items-start gap-1.5">
-              <Brain className="w-3 h-3 mt-0.5 flex-shrink-0 text-violet-400" />
-              &ldquo;{tip.tip.reasoning}&rdquo;
-            </p>
-
-            {/* Stats Row */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Edge */}
-              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] px-1.5 py-0">
-                +{(tip.tip.edge * 100).toFixed(1)}% edge
-              </Badge>
+          <div className="mt-3 flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Edge</span>
+              <MiniEdgeMeter value={tip.tip.edge} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] text-muted-foreground uppercase tracking-wider">Conf</span>
+              <MiniConfidenceMeter value={tip.tip.confidence} />
+            </div>
+            <div className="ml-auto flex items-center gap-2">
               {/* Risk */}
-              <Badge className={`${RISK_BG[tip.tip.riskLevel]} text-[9px] px-1.5 py-0 flex items-center gap-1`}>
+              <Badge className={`${RISK_BG[tip.tip.riskLevel]} ${RISK_COLORS[tip.tip.riskLevel]} text-[9px] px-1.5 py-0 flex items-center gap-0.5`}>
                 <Shield className="w-2.5 h-2.5" />
                 {tip.tip.riskLevel.replace('-', ' ')}
               </Badge>
-              {/* Kelly */}
-              <span className="text-[9px] text-violet-400 font-mono">
-                Kelly {(tip.tip.kellyStake * 100).toFixed(1)}%
-              </span>
-              {/* Flags */}
+              {/* Safe/Contrarian flags */}
               {tip.tip.isSafePlay && (
-                <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[9px] px-1.5 py-0 flex items-center gap-1">
+                <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[9px] px-1.5 py-0 flex items-center gap-0.5">
                   <CheckCircle2 className="w-2.5 h-2.5" />
                   Safe
                 </Badge>
@@ -228,12 +272,16 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
                   Contrarian
                 </Badge>
               )}
-              {/* Markets evaluated */}
-              <span className="text-[9px] text-slate-500 ml-auto">
-                {tip.tip.marketsEvaluated} markets checked
-              </span>
             </div>
           </div>
+        )}
+
+        {/* ── Reasoning ──────────────────────────────────────── */}
+        {hasTip && tip.tip && (
+          <p className="mt-2 text-[11px] text-muted-foreground italic flex items-start gap-1.5">
+            <Brain className="w-3 h-3 mt-0.5 flex-shrink-0 text-violet-400" />
+            &ldquo;{tip.tip.reasoning}&rdquo;
+          </p>
         )}
 
         {/* ── Expand Toggle ────────────────────────────────────── */}
@@ -389,7 +437,7 @@ export function TipCard({ tip, onMatchClick }: TipCardProps) {
                   <span className="text-muted-foreground">Data quality:</span>
                   <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500"
+                      className="h-full rounded-full bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500 bar-animate"
                       style={{ width: `${Math.round(tip.analysis.dataQuality * 100)}%` }}
                     />
                   </div>

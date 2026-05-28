@@ -13,7 +13,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { NavTab } from '@/lib/types';
 import {
   LayoutDashboard,
-  Brain,
   Crosshair,
   Radio,
   Trophy,
@@ -21,6 +20,7 @@ import {
   Menu,
   X,
   Zap,
+  Brain,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -54,7 +54,7 @@ const navItems: Array<{
   {
     id: 'value-bets',
     label: 'Value Bets',
-    icon: <Crosshair className="w-5 h-5" />,
+    icon: <Brain className="w-5 h-5" />,
     description: 'Edge Detection',
   },
   {
@@ -108,11 +108,11 @@ function AppContent() {
   return (
     <div className="flex h-screen overflow-hidden bg-[#0a0e1a]">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-[#0d1117] border-r border-white/5 h-full">
+      <aside className="hidden md:flex flex-col w-64 bg-[#0d1117] border-r border-white/[0.06] h-full">
         {/* Logo */}
-        <div className="p-5 border-b border-white/5">
+        <div className="p-5 border-b border-white/[0.06]">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
               <Zap className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -130,18 +130,18 @@ function AppContent() {
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group ${
                   isActive
-                    ? 'bg-emerald-500/10 text-emerald-400 glow-green'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                    ? 'sidebar-active text-emerald-400 glow-green'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                 }`}
               >
-                <span className={isActive ? 'text-emerald-400' : 'text-slate-500'}>
+                <span className={`transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
                   {item.icon}
                 </span>
                 <span>{item.label}</span>
                 {isActive && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
                 )}
               </button>
             );
@@ -149,9 +149,15 @@ function AppContent() {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/5">
+        <div className="p-4 border-t border-white/[0.06]">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-5 h-5 rounded bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+              <Zap className="w-3 h-3 text-emerald-400" />
+            </div>
+            <span className="text-[10px] text-slate-500">Punter Brain v4</span>
+          </div>
           <div className="text-[10px] text-slate-600 text-center">
-            Punter Brain v4 · Turso · BSD API v2
+            Turso · BSD API v2
           </div>
           <div className="text-[10px] text-slate-700 text-center mt-1">
             © 2026 NeuralBet
@@ -174,10 +180,10 @@ function AppContent() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="w-72 h-full bg-[#0d1117] border-r border-white/5"
+              className="w-72 h-full bg-[#0d1117] border-r border-white/[0.06]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between p-5 border-b border-white/5">
+              <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
                     <Zap className="w-4 h-4 text-white" />
@@ -197,7 +203,7 @@ function AppContent() {
                       onClick={() => handleNavClick(item.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                         isActive
-                          ? 'bg-emerald-500/10 text-emerald-400'
+                          ? 'sidebar-active text-emerald-400'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
                       }`}
                     >
@@ -215,7 +221,7 @@ function AppContent() {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         {/* Mobile Header */}
-        <div className="md:hidden sticky top-0 z-40 bg-[#0a0e1a]/90 backdrop-blur-md border-b border-white/5 px-4 py-3 flex items-center justify-between">
+        <div className="md:hidden sticky top-0 z-40 bg-[#0a0e1a]/90 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex items-center justify-between">
           <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 rounded-lg hover:bg-white/5">
             <Menu className="w-5 h-5 text-slate-400" />
           </button>

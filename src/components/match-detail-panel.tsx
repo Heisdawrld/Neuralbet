@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
@@ -15,6 +16,7 @@ import {
   CheckCircle2, AlertTriangle, Zap, Radio, Trophy,
   Swords, BarChart3, DollarSign, Eye, ChevronRight,
   ArrowUp, ArrowDown, Minus, User, Timer,
+  ChevronDown,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { PunterTipV4Data, TipQuality } from '@/lib/types';
@@ -246,7 +248,7 @@ const QUALITY_CONFIG: Record<TipQuality, {
     color: 'text-amber-300',
     bg: 'bg-amber-500/20',
     border: 'border-amber-500/40',
-    glow: 'shadow-amber-500/20',
+    glow: 'gold-glow',
   },
   silver: {
     icon: <Crosshair className="w-5 h-5" />,
@@ -254,7 +256,7 @@ const QUALITY_CONFIG: Record<TipQuality, {
     color: 'text-cyan-300',
     bg: 'bg-cyan-500/15',
     border: 'border-cyan-500/30',
-    glow: 'shadow-cyan-500/10',
+    glow: 'silver-glow',
   },
   bronze: {
     icon: <TrendingUp className="w-5 h-5" />,
@@ -262,7 +264,7 @@ const QUALITY_CONFIG: Record<TipQuality, {
     color: 'text-slate-300',
     bg: 'bg-slate-500/15',
     border: 'border-slate-500/30',
-    glow: '',
+    glow: 'bronze-glow',
   },
   skip: {
     icon: <X className="w-5 h-5" />,
@@ -331,7 +333,6 @@ function FormLetter({ letter }: { letter: string }) {
 
 export function MatchDetailPanel() {
   const { selectedMatchId, isMatchPanelOpen, closeMatchPanel } = useAppStore();
-  // Reset tab state when match changes by using selectedMatchId as key source
   const [activeTab, setActiveTab] = useState<TabId>('prediction');
   const [prevMatchId, setPrevMatchId] = useState<number | null>(null);
   if (selectedMatchId !== prevMatchId) {
@@ -384,10 +385,10 @@ export function MatchDetailPanel() {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed top-0 right-0 z-50 h-full w-full md:w-[70%] lg:w-[55%] bg-[#0d1117] border-l border-white/[0.06] flex flex-col overflow-hidden"
+            className="fixed top-0 right-0 z-50 h-full w-full md:w-[70%] lg:w-[55%] bg-[#0d1117]/95 backdrop-blur-xl border-l border-white/[0.06] flex flex-col overflow-hidden"
           >
             {/* ── HEADER ──────────────────────────────────────────── */}
-            <div className="flex-shrink-0 border-b border-white/[0.06] bg-[#0d1117]">
+            <div className="flex-shrink-0 border-b border-white/[0.06] bg-gradient-to-b from-[#0d1117] to-[#0a0e1a]">
               {/* Close button */}
               <div className="flex items-center justify-between px-4 pt-3">
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -440,8 +441,11 @@ export function MatchDetailPanel() {
                         </span>
                         <div className="flex flex-col items-center">
                           {isLive && (
-                            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px] px-1.5 py-0 mb-1 animate-pulse">
-                              <Radio className="w-2.5 h-2.5 mr-1" />
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px] px-1.5 py-0 mb-1">
+                              <span className="relative flex h-1.5 w-1.5 mr-1">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
+                              </span>
                               {data?.event.currentMinute ? `${data.event.currentMinute}'` : 'LIVE'}
                             </Badge>
                           )}
@@ -527,7 +531,7 @@ export function MatchDetailPanel() {
                       onClick={() => setActiveTab(tab.id)}
                       className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-t-lg transition-all whitespace-nowrap ${
                         activeTab === tab.id
-                          ? 'bg-white/[0.06] text-emerald-400 border-b-2 border-emerald-400'
+                          ? 'tab-active'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
                       }`}
                     >
@@ -577,9 +581,6 @@ export function MatchDetailPanel() {
   );
 }
 
-// ── Need useState and useEffect ────────────────────────────────────────
-import { useState, useEffect } from 'react';
-
 // ── Ordinal helper ─────────────────────────────────────────────────────
 
 function getOrdinal(n: number): string {
@@ -593,15 +594,15 @@ function getOrdinal(n: number): string {
 function LoadingSkeleton() {
   return (
     <div className="p-4 space-y-4">
-      <Skeleton className="h-32 w-full rounded-xl bg-white/5" />
-      <Skeleton className="h-20 w-full rounded-xl bg-white/5" />
-      <Skeleton className="h-40 w-full rounded-xl bg-white/5" />
+      <div className="glass-skeleton h-32 w-full" />
+      <div className="glass-skeleton h-20 w-full" />
+      <div className="glass-skeleton h-40 w-full" />
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// PREDICTION TAB
+// PREDICTION TAB — Enhanced with animated probability bars
 // ═══════════════════════════════════════════════════════════════════════
 
 function PredictionTab({ data }: { data: MatchDetailResponse }) {
@@ -612,11 +613,10 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
 
   return (
     <div className="space-y-4">
-      {/* Engine Prediction */}
       {tip ? (
         <>
           {hasTip && tip.tip ? (
-            <Card className={`glass-card p-5 ${config.glow} border ${config.border}`}>
+            <Card className={`glass-card-premium p-5 ${config.glow}`}>
               {/* Quality Badge */}
               <div className="flex items-center justify-between mb-4">
                 <Badge className={`${config.bg} ${config.color} ${config.border} border text-xs px-3 py-1 flex items-center gap-1.5`}>
@@ -643,22 +643,22 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
                 <p className="text-sm text-muted-foreground mt-1">{tip.tip.market}</p>
                 {tip.tip.odds && (
                   <p className="text-3xl font-mono font-bold text-emerald-400 mt-2">
-                    {tip.tip.odds.toFixed(2)}
+                    @{tip.tip.odds.toFixed(2)}
                   </p>
                 )}
               </div>
 
               {/* Edge & Kelly */}
               <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="text-center">
+                <div className="text-center bg-white/[0.03] rounded-lg p-2.5 border border-white/[0.06]">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Edge</p>
                   <p className="text-lg font-bold text-emerald-400">+{(tip.tip.edge * 100).toFixed(1)}%</p>
                 </div>
-                <div className="text-center">
+                <div className="text-center bg-white/[0.03] rounded-lg p-2.5 border border-white/[0.06]">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Kelly</p>
                   <p className="text-lg font-bold text-cyan-400">{(tip.tip.kellyStake * 100).toFixed(1)}%</p>
                 </div>
-                <div className="text-center">
+                <div className="text-center bg-white/[0.03] rounded-lg p-2.5 border border-white/[0.06]">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Risk</p>
                   <Badge className={`${RISK_BG[tip.tip.riskLevel]} ${RISK_COLORS[tip.tip.riskLevel]} text-[10px] px-2 py-0.5`}>
                     <Shield className="w-2.5 h-2.5 mr-1" />
@@ -681,8 +681,7 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
               </p>
             </Card>
           ) : (
-            /* SKIP Card */
-            <Card className="glass-card p-5">
+            <Card className="glass-card-premium p-5">
               <div className="text-center">
                 <Badge className="bg-slate-500/10 text-slate-500 border-slate-500/20 border text-xs px-3 py-1 flex items-center gap-1.5 mx-auto mb-3">
                   <X className="w-4 h-4" />
@@ -702,13 +701,13 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
             </Card>
           )}
 
-          {/* Probability Summary */}
-          <Card className="glass-card p-4">
+          {/* Probability Summary — Animated bars */}
+          <Card className="glass-card-premium p-4">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
               <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
               Model Probabilities
             </h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <ProbRow label={data.event.homeTeam} modelProb={tip.probabilities.homeWin} odds={data.odds?.homeWin} />
               <ProbRow label="Draw" modelProb={tip.probabilities.draw} odds={data.odds?.draw} />
               <ProbRow label={data.event.awayTeam} modelProb={tip.probabilities.awayWin} odds={data.odds?.awayWin} />
@@ -731,7 +730,7 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
           </Card>
         </>
       ) : (
-        <Card className="glass-card p-5 text-center">
+        <Card className="glass-card-premium p-5 text-center">
           <Brain className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">Engine prediction not available</p>
           <p className="text-[11px] text-slate-500 mt-1">The engine needs standings data to generate predictions</p>
@@ -748,12 +747,12 @@ function ProbRow({ label, modelProb, odds }: { label: string; modelProb: number;
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-slate-300 w-24 truncate">{label}</span>
-      <div className="flex-1 h-2 bg-white/[0.05] rounded-full overflow-hidden">
+      <div className="flex-1 h-2.5 bg-white/[0.05] rounded-full overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${modelProb * 100}%` }}
-          transition={{ duration: 0.5 }}
-          className={`h-full rounded-full ${modelProb > 0.5 ? 'bg-emerald-500' : modelProb > 0.3 ? 'bg-cyan-500' : 'bg-slate-500'}`}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className={`h-full rounded-full ${modelProb > 0.5 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : modelProb > 0.3 ? 'bg-gradient-to-r from-cyan-600 to-cyan-400' : 'bg-slate-500'}`}
         />
       </div>
       <span className="text-xs font-mono w-12 text-right text-slate-300">{Math.round(modelProb * 100)}%</span>
@@ -767,13 +766,12 @@ function ProbRow({ label, modelProb, odds }: { label: string; modelProb: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// STATS TAB
+// STATS TAB — Better comparison bars, xG display
 // ═══════════════════════════════════════════════════════════════════════
 
 function StatsTab({ data }: { data: MatchDetailResponse }) {
   const tip = data.enginePrediction;
 
-  // H2H Summary
   let h2hHomeWins = 0, h2hDraws = 0, h2hAwayWins = 0, h2hGoals = 0, h2hOver25 = 0, h2hBtts = 0;
   for (const m of data.h2h) {
     const isHome = m.homeTeamId === data.event.homeTeamId;
@@ -789,14 +787,13 @@ function StatsTab({ data }: { data: MatchDetailResponse }) {
   return (
     <div className="space-y-4">
       {/* H2H */}
-      <Card className="glass-card p-4">
+      <Card className="glass-card-premium p-4">
         <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <Swords className="w-3.5 h-3.5 text-cyan-400" />
           Head to Head
         </h3>
         {h2hTotal > 0 ? (
           <>
-            {/* W/D/L Bar */}
             <div className="flex h-6 rounded-full overflow-hidden mb-3">
               <div className="bg-emerald-500/60 flex items-center justify-center text-[10px] font-bold text-white" style={{ width: `${(h2hHomeWins / h2hTotal) * 100}%` }}>
                 {h2hHomeWins > 0 && h2hHomeWins}
@@ -819,10 +816,9 @@ function StatsTab({ data }: { data: MatchDetailResponse }) {
               <span className="text-slate-300">BTTS: <span className="text-cyan-400 font-mono">{h2hTotal > 0 ? Math.round((h2hBtts / h2hTotal) * 100) : '-'}%</span></span>
             </div>
 
-            {/* H2H Matches List */}
             <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
               {data.h2h.slice(0, 8).map((m, i) => (
-                <div key={i} className="flex items-center justify-between text-[11px] py-1 px-2 rounded bg-white/[0.02]">
+                <div key={i} className="flex items-center justify-between text-[11px] py-1.5 px-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                   <span className="text-muted-foreground w-16">{format(new Date(m.eventDate), 'MMM yyyy')}</span>
                   <span className="flex-1 text-right truncate pr-2">{m.homeTeam}</span>
                   <span className="font-mono font-bold text-white px-2">{m.homeScore} - {m.awayScore}</span>
@@ -838,7 +834,7 @@ function StatsTab({ data }: { data: MatchDetailResponse }) {
 
       {/* Team Comparison */}
       {data.homeTeamStanding && data.awayTeamStanding && (
-        <Card className="glass-card p-4">
+        <Card className="glass-card-premium p-4">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
             Team Comparison
@@ -878,7 +874,6 @@ function StatsTab({ data }: { data: MatchDetailResponse }) {
             />
           </div>
 
-          {/* Form */}
           <Separator className="my-3 bg-white/[0.06]" />
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -911,7 +906,7 @@ function StatsTab({ data }: { data: MatchDetailResponse }) {
 
       {/* Live Match Stats */}
       {data.stats && (data.event.status === 'in' || data.event.status === 'finished' || data.event.status === 'live') && (
-        <Card className="glass-card p-4">
+        <Card className="glass-card-premium p-4">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
             Match Statistics
@@ -932,7 +927,7 @@ function StatsTab({ data }: { data: MatchDetailResponse }) {
 
       {/* Engine Stats */}
       {tip && (
-        <Card className="glass-card p-4">
+        <Card className="glass-card-premium p-4">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
             Engine Insights
@@ -981,9 +976,19 @@ function ComparisonBar({ label, homeVal, awayVal, homeLabel, awayLabel, inverse,
         <span>{label}</span>
         <span className={!homeBetter ? 'text-emerald-400 font-medium' : ''}>{awayVal.toFixed(isPercent ? 0 : 2)}{isPercent ? '%' : ''}</span>
       </div>
-      <div className="flex h-1.5 rounded-full overflow-hidden gap-0.5">
-        <div className={`rounded-l-full ${homeBetter ? 'bg-emerald-500' : 'bg-slate-600'}`} style={{ width: `${homePct}%` }} />
-        <div className={`rounded-r-full ${!homeBetter ? 'bg-emerald-500' : 'bg-slate-600'}`} style={{ width: `${100 - homePct}%` }} />
+      <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${homePct}%` }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className={`rounded-l-full ${homeBetter ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-slate-600'}`}
+        />
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${100 - homePct}%` }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className={`rounded-r-full ${!homeBetter ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-slate-600'}`}
+        />
       </div>
     </div>
   );
@@ -1006,22 +1011,32 @@ function StatBar({ label, home, away, suffix, isDecimal }: {
         <span className="text-muted-foreground text-[10px]">{label}</span>
         <span className="font-mono text-slate-200 w-10">{isDecimal ? away.toFixed(2) : away}{suffix || ''}</span>
       </div>
-      <div className="flex h-1 rounded-full overflow-hidden gap-0.5">
-        <div className="bg-cyan-500/70 rounded-l-full" style={{ width: `${homePct}%` }} />
-        <div className="bg-emerald-500/70 rounded-r-full" style={{ width: `${100 - homePct}%` }} />
+      <div className="flex h-1.5 rounded-full overflow-hidden gap-0.5">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${homePct}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="bg-gradient-to-r from-cyan-600 to-cyan-400 rounded-l-full"
+        />
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${100 - homePct}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-r-full"
+        />
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// STANDINGS TAB
+// STANDINGS TAB — Full league table with highlighted teams
 // ═══════════════════════════════════════════════════════════════════════
 
 function StandingsTab({ data }: { data: MatchDetailResponse }) {
   if (data.standings.length === 0) {
     return (
-      <Card className="glass-card p-6 text-center">
+      <Card className="glass-card-premium p-6 text-center">
         <Trophy className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
         <p className="text-sm text-muted-foreground">No standings data available</p>
       </Card>
@@ -1029,7 +1044,7 @@ function StandingsTab({ data }: { data: MatchDetailResponse }) {
   }
 
   return (
-    <Card className="glass-card p-4 overflow-hidden">
+    <Card className="glass-card-premium p-4 overflow-hidden">
       <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
         <Trophy className="w-3.5 h-3.5 text-amber-400" />
         {data.event.leagueName} Standings
@@ -1047,7 +1062,7 @@ function StandingsTab({ data }: { data: MatchDetailResponse }) {
               <th className="text-center py-2 px-1">GF</th>
               <th className="text-center py-2 px-1">GA</th>
               <th className="text-center py-2 px-1">GD</th>
-              <th className="text-center py-2 px-1">Pts</th>
+              <th className="text-center py-2 px-1 font-bold">Pts</th>
               <th className="text-center py-2 px-1">xGD</th>
               <th className="text-center py-2 pl-2">Form</th>
             </tr>
@@ -1058,8 +1073,8 @@ function StandingsTab({ data }: { data: MatchDetailResponse }) {
               return (
                 <tr
                   key={team.teamId}
-                  className={`border-b border-white/[0.03] ${
-                    isMatchTeam ? 'bg-emerald-500/[0.06]' : ''
+                  className={`border-b border-white/[0.03] transition-colors ${
+                    isMatchTeam ? 'bg-emerald-500/[0.06]' : 'hover:bg-white/[0.02]'
                   }`}
                 >
                   <td className={`py-1.5 pr-2 ${isMatchTeam ? 'text-emerald-400 font-bold' : 'text-muted-foreground'}`}>
@@ -1109,7 +1124,7 @@ function StandingsTab({ data }: { data: MatchDetailResponse }) {
 function LineupsTab({ data }: { data: MatchDetailResponse }) {
   if (!data.lineup || data.lineup.lineupStatus === 'unavailable') {
     return (
-      <Card className="glass-card p-6 text-center">
+      <Card className="glass-card-premium p-6 text-center">
         <Users className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
         <p className="text-sm text-muted-foreground">Lineups not yet confirmed</p>
         <p className="text-[11px] text-slate-500 mt-1">Check back closer to kickoff</p>
@@ -1121,8 +1136,7 @@ function LineupsTab({ data }: { data: MatchDetailResponse }) {
 
   return (
     <div className="space-y-4">
-      {/* Formation */}
-      <Card className="glass-card p-4">
+      <Card className="glass-card-premium p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="text-center flex-1">
             <p className="text-2xl font-bold font-mono text-cyan-400">{lineup.homeFormation || '?'}</p>
@@ -1148,10 +1162,8 @@ function LineupsTab({ data }: { data: MatchDetailResponse }) {
         </div>
       </Card>
 
-      {/* Players Lists */}
       <div className="grid grid-cols-2 gap-3">
-        {/* Home Players */}
-        <Card className="glass-card p-3">
+        <Card className="glass-card-premium p-3">
           <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">{data.event.homeTeam}</h4>
           {lineup.homePlayers && Array.isArray(lineup.homePlayers) && lineup.homePlayers.length > 0 ? (
             <div className="space-y-1 max-h-64 overflow-y-auto">
@@ -1168,8 +1180,7 @@ function LineupsTab({ data }: { data: MatchDetailResponse }) {
           )}
         </Card>
 
-        {/* Away Players */}
-        <Card className="glass-card p-3">
+        <Card className="glass-card-premium p-3">
           <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">{data.event.awayTeam}</h4>
           {lineup.awayPlayers && Array.isArray(lineup.awayPlayers) && lineup.awayPlayers.length > 0 ? (
             <div className="space-y-1 max-h-64 overflow-y-auto">
@@ -1187,9 +1198,8 @@ function LineupsTab({ data }: { data: MatchDetailResponse }) {
         </Card>
       </div>
 
-      {/* Unavailable Players */}
       {(lineup.homeUnavailable?.length > 0 || lineup.awayUnavailable?.length > 0) && (
-        <Card className="glass-card p-4">
+        <Card className="glass-card-premium p-4">
           <h4 className="text-xs font-medium text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5" />
             Unavailable
@@ -1231,7 +1241,7 @@ function LineupsTab({ data }: { data: MatchDetailResponse }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ODDS TAB
+// ODDS TAB — Enhanced with movement arrows & Polymarket
 // ═══════════════════════════════════════════════════════════════════════
 
 function OddsTab({ data }: { data: MatchDetailResponse }) {
@@ -1247,14 +1257,14 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
   return (
     <div className="space-y-4">
       {!data.odds ? (
-        <Card className="glass-card p-6 text-center">
+        <Card className="glass-card-premium p-6 text-center">
           <DollarSign className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">No odds data available</p>
         </Card>
       ) : (
         <>
           {/* 1X2 */}
-          <Card className="glass-card p-4">
+          <Card className="glass-card-premium p-4">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
               <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
               1X2 Odds
@@ -1279,7 +1289,7 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
           </Card>
 
           {/* Over/Under */}
-          <Card className="glass-card p-4">
+          <Card className="glass-card-premium p-4">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               Over / Under
             </h3>
@@ -1300,7 +1310,7 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
           </Card>
 
           {/* BTTS */}
-          <Card className="glass-card p-4">
+          <Card className="glass-card-premium p-4">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               Both Teams to Score
             </h3>
@@ -1312,7 +1322,7 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
 
           {/* Double Chance */}
           {(data.odds.doubleChance1x || data.odds.doubleChance12 || data.odds.doubleChanceX2) && (
-            <Card className="glass-card p-4">
+            <Card className="glass-card-premium p-4">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 Double Chance
               </h3>
@@ -1326,7 +1336,7 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
 
           {/* Draw No Bet */}
           {(data.odds.drawNoBetHome || data.odds.drawNoBetAway) && (
-            <Card className="glass-card p-4">
+            <Card className="glass-card-premium p-4">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                 Draw No Bet
               </h3>
@@ -1339,28 +1349,31 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
 
           {/* Polymarket */}
           {data.polymarket && (
-            <Card className="glass-card p-4">
+            <Card className="glass-card-premium p-4 gradient-border">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Zap className="w-3.5 h-3.5 text-amber-400" />
-                Polymarket
+                Polymarket Prediction Market
               </h3>
               <div className="grid grid-cols-3 gap-2">
                 {data.polymarket.homeWinPrice != null && (
-                  <div className="text-center p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                    <p className="text-[10px] text-muted-foreground">{data.event.homeTeam.slice(0, 3)}</p>
-                    <p className="text-sm font-mono font-bold text-amber-400">{(data.polymarket.homeWinPrice * 100).toFixed(0)}¢</p>
+                  <div className="text-center p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <p className="text-[10px] text-muted-foreground mb-1">{data.event.homeTeam.slice(0, 3)}</p>
+                    <p className="text-lg font-mono font-bold text-amber-400">{(data.polymarket.homeWinPrice * 100).toFixed(0)}¢</p>
+                    <p className="text-[9px] text-slate-500">{(data.polymarket.homeWinPrice * 100).toFixed(0)}% prob</p>
                   </div>
                 )}
                 {data.polymarket.drawPrice != null && (
-                  <div className="text-center p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                    <p className="text-[10px] text-muted-foreground">Draw</p>
-                    <p className="text-sm font-mono font-bold text-amber-400">{(data.polymarket.drawPrice * 100).toFixed(0)}¢</p>
+                  <div className="text-center p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <p className="text-[10px] text-muted-foreground mb-1">Draw</p>
+                    <p className="text-lg font-mono font-bold text-amber-400">{(data.polymarket.drawPrice * 100).toFixed(0)}¢</p>
+                    <p className="text-[9px] text-slate-500">{(data.polymarket.drawPrice * 100).toFixed(0)}% prob</p>
                   </div>
                 )}
                 {data.polymarket.awayWinPrice != null && (
-                  <div className="text-center p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                    <p className="text-[10px] text-muted-foreground">{data.event.awayTeam.slice(0, 3)}</p>
-                    <p className="text-sm font-mono font-bold text-amber-400">{(data.polymarket.awayWinPrice * 100).toFixed(0)}¢</p>
+                  <div className="text-center p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <p className="text-[10px] text-muted-foreground mb-1">{data.event.awayTeam.slice(0, 3)}</p>
+                    <p className="text-lg font-mono font-bold text-amber-400">{(data.polymarket.awayWinPrice * 100).toFixed(0)}¢</p>
+                    <p className="text-[9px] text-slate-500">{(data.polymarket.awayWinPrice * 100).toFixed(0)}% prob</p>
                   </div>
                 )}
               </div>
@@ -1369,21 +1382,24 @@ function OddsTab({ data }: { data: MatchDetailResponse }) {
 
           {/* Odds Movement */}
           {data.oddsMovement.length > 0 && (
-            <Card className="glass-card p-4">
+            <Card className="glass-card-premium p-4">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
                 Odds Movement
               </h3>
-              <div className="space-y-1 max-h-48 overflow-y-auto">
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {data.oddsMovement.slice(0, 20).map((m, i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px] py-1 px-2 rounded bg-white/[0.02]">
+                  <div key={i} className="flex items-center justify-between text-[11px] py-1.5 px-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                     <span className="text-muted-foreground w-24 truncate">{m.market}</span>
                     <span className="text-slate-300 w-16 truncate">{m.outcome}</span>
                     <span className="font-mono w-10 text-right">{m.decimalOdds.toFixed(2)}</span>
                     {m.movement && (
-                      <span className={`ml-2 ${m.movement === 'up' ? 'text-emerald-400' : m.movement === 'down' ? 'text-red-400' : 'text-slate-400'}`}>
+                      <span className={`ml-2 ${m.movement === 'up' ? 'odds-up' : m.movement === 'down' ? 'odds-down' : 'text-slate-400'}`}>
                         {m.movement === 'up' ? <ArrowUp className="w-3 h-3" /> : m.movement === 'down' ? <ArrowDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                       </span>
+                    )}
+                    {m.previousDecimalOdds != null && (
+                      <span className="text-[9px] text-slate-500 ml-1">was {m.previousDecimalOdds.toFixed(2)}</span>
                     )}
                     {m.bookmakerName && (
                       <span className="text-[9px] text-slate-500 ml-2 truncate max-w-[60px]">{m.bookmakerName}</span>
@@ -1405,7 +1421,7 @@ function OddsCell({ label, odds, modelProb }: { label: string; odds: number | nu
   const isContrarian = edge != null && edge > 0.05;
 
   return (
-    <div className={`text-center p-2 rounded-lg bg-white/[0.03] border ${isContrarian ? 'border-violet-500/30' : 'border-white/[0.06]'}`}>
+    <div className={`text-center p-2.5 rounded-lg bg-white/[0.03] border ${isContrarian ? 'border-violet-500/30 bg-violet-500/[0.04]' : 'border-white/[0.06]'}`}>
       <p className="text-[10px] text-muted-foreground mb-1">{label}</p>
       {odds ? (
         <>
@@ -1439,11 +1455,11 @@ function OddsRow({ label, overOdds, underOdds, modelOverProb }: {
     <div className="flex items-center gap-2">
       <span className="text-[10px] text-muted-foreground w-16">{label}</span>
       <div className="flex-1 grid grid-cols-2 gap-2">
-        <div className="text-center p-1.5 rounded bg-white/[0.03] border border-white/[0.06]">
+        <div className="text-center p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           <span className="font-mono text-xs font-bold text-emerald-400">{overOdds ? overOdds.toFixed(2) : '-'}</span>
           <span className="text-[9px] text-muted-foreground ml-1">Over</span>
         </div>
-        <div className="text-center p-1.5 rounded bg-white/[0.03] border border-white/[0.06]">
+        <div className="text-center p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           <span className="font-mono text-xs font-bold text-red-400">{underOdds ? underOdds.toFixed(2) : '-'}</span>
           <span className="text-[9px] text-muted-foreground ml-1">Under</span>
         </div>
@@ -1458,7 +1474,7 @@ function OddsRow({ label, overOdds, underOdds, modelOverProb }: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ANALYSIS TAB
+// ANALYSIS TAB — Expandable intelligence sections
 // ═══════════════════════════════════════════════════════════════════════
 
 function AnalysisTab({ data }: { data: MatchDetailResponse }) {
@@ -1466,7 +1482,7 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
 
   if (!tip) {
     return (
-      <Card className="glass-card p-6 text-center">
+      <Card className="glass-card-premium p-6 text-center">
         <Brain className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
         <p className="text-sm text-muted-foreground">Analysis not available</p>
         <p className="text-[11px] text-slate-500 mt-1">Engine needs more data to generate analysis</p>
@@ -1479,7 +1495,7 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
   return (
     <div className="space-y-4">
       {/* Model Agreement */}
-      <Card className="glass-card p-4">
+      <Card className="glass-card-premium p-4">
         <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <Brain className="w-3.5 h-3.5 text-violet-400" />
           Model Agreement
@@ -1499,7 +1515,7 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
       </Card>
 
       {/* Data Quality */}
-      <Card className="glass-card p-4">
+      <Card className="glass-card-premium p-4">
         <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <Eye className="w-3.5 h-3.5 text-cyan-400" />
           Data Quality
@@ -1507,9 +1523,11 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
         <div className="flex items-center gap-3 mb-2">
           <div className="flex-1">
             <div className="h-2.5 bg-white/[0.05] rounded-full overflow-hidden">
-              <div
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.round(analysis.dataQuality * 100)}%` }}
+                transition={{ duration: 0.8, ease: 'easeOut' }}
                 className="h-full rounded-full bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500"
-                style={{ width: `${Math.round(analysis.dataQuality * 100)}%` }}
               />
             </div>
           </div>
@@ -1522,61 +1540,65 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
         </p>
       </Card>
 
-      {/* Individual Models */}
-      <Card className="glass-card p-4">
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-          Individual Model Predictions
-        </h3>
+      {/* H2H Intelligence */}
+      <ExpandableSection icon={<Swords className="w-3.5 h-3.5" />} title="Head to Head" defaultOpen>
         <div className="space-y-2">
-          <ModelRow name="Elo Rating" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />
-          <ModelRow name="Poisson" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />
-          <ModelRow name="xG Model" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />
-          <ModelRow name="Form" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />
-          <ModelRow name="Attack/Defense" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />
-          {data.homeManager && <ModelRow name="Manager" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />}
-          {data.referee && <ModelRow name="Referee" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />}
-          {data.lineup && data.lineup.lineupStatus !== 'unavailable' && <ModelRow name="Lineup" home={tip.probabilities.homeWin * 100} draw={tip.probabilities.draw * 100} away={tip.probabilities.awayWin * 100} />}
-        </div>
-        <p className="text-[9px] text-slate-500 mt-2 italic">Combined weighted probabilities shown per model contribution</p>
-      </Card>
-
-      {/* Situational Factors */}
-      <Card className="glass-card p-4">
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <Thermometer className="w-3.5 h-3.5 text-amber-400" />
-          Situational Factors
-        </h3>
-        <div className="grid grid-cols-2 gap-2">
-          <SituationalItem label="Derby" value={analysis.situation.isDerby ? 'Yes' : 'No'} color={analysis.situation.isDerby ? 'text-orange-400' : 'text-slate-400'} />
-          <SituationalItem label="Weather" value={analysis.situation.weatherNote || 'Clear'} color={analysis.situation.weatherNote ? 'text-amber-400' : 'text-emerald-400'} />
-          <SituationalItem label="Travel" value={analysis.situation.travelNote || 'Normal'} color="text-slate-400" />
-          <SituationalItem label="Home Motivation" value={analysis.situation.homeMotivation} color={getMotivationColor(analysis.situation.homeMotivation)} />
-          <SituationalItem label="Away Motivation" value={analysis.situation.awayMotivation} color={getMotivationColor(analysis.situation.awayMotivation)} />
-          {analysis.situation.fatigueNote && (
-            <SituationalItem label="Fatigue" value={analysis.situation.fatigueNote} color="text-amber-400" />
-          )}
-        </div>
-        {analysis.situation.keyAbsences.length > 0 && (
-          <div className="mt-3">
-            <p className="text-[10px] text-red-400 font-medium mb-1">Key Absences:</p>
-            <div className="flex gap-1.5 flex-wrap">
-              {analysis.situation.keyAbsences.map((name, i) => (
-                <Badge key={i} className="bg-red-500/10 text-red-400 border-red-500/20 text-[9px] px-1.5 py-0">
-                  {name}
-                </Badge>
-              ))}
+          <p className="text-[10px] text-slate-300">{analysis.h2h.note}</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.06] text-center">
+              <p className="text-[9px] text-muted-foreground">Meetings</p>
+              <p className="text-sm font-mono font-bold">{analysis.h2h.totalMeetings}</p>
+            </div>
+            <div className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.06] text-center">
+              <p className="text-[9px] text-muted-foreground">O2.5 Rate</p>
+              <p className="text-sm font-mono font-bold text-amber-400">{Math.round(analysis.h2h.over25Rate * 100)}%</p>
+            </div>
+            <div className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.06] text-center">
+              <p className="text-[9px] text-muted-foreground">BTTS Rate</p>
+              <p className="text-sm font-mono font-bold text-cyan-400">{Math.round(analysis.h2h.bttsRate * 100)}%</p>
             </div>
           </div>
-        )}
-      </Card>
+        </div>
+      </ExpandableSection>
 
-      {/* Manager Tactical Matchup */}
-      <Card className="glass-card p-4">
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <Users className="w-3.5 h-3.5 text-cyan-400" />
-          Tactical Matchup
-        </h3>
+      {/* Form Intelligence */}
+      <ExpandableSection icon={<BarChart3 className="w-3.5 h-3.5" />} title="Form & Recent Results" defaultOpen>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1">{data.event.homeTeam}</p>
+            <div className="flex gap-0.5 mb-1">
+              {analysis.last5.home.form.split('').map((l, i) => (
+                <FormLetter key={i} letter={l} />
+              ))}
+            </div>
+            <p className="text-[9px] text-slate-400">
+              {analysis.last5.home.wins}W {analysis.last5.home.draws}D {analysis.last5.home.losses}L
+              {' · '}
+              <span className={analysis.form.homeTrend === 'rising' ? 'text-emerald-400' : analysis.form.homeTrend === 'declining' ? 'text-red-400' : 'text-slate-400'}>
+                {analysis.form.homeTrend}
+              </span>
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1">{data.event.awayTeam}</p>
+            <div className="flex gap-0.5 mb-1">
+              {analysis.last5.away.form.split('').map((l, i) => (
+                <FormLetter key={i} letter={l} />
+              ))}
+            </div>
+            <p className="text-[9px] text-slate-400">
+              {analysis.last5.away.wins}W {analysis.last5.away.draws}D {analysis.last5.away.losses}L
+              {' · '}
+              <span className={analysis.form.awayTrend === 'rising' ? 'text-emerald-400' : analysis.form.awayTrend === 'declining' ? 'text-red-400' : 'text-slate-400'}>
+                {analysis.form.awayTrend}
+              </span>
+            </p>
+          </div>
+        </div>
+      </ExpandableSection>
+
+      {/* Manager & Tactical */}
+      <ExpandableSection icon={<Users className="w-3.5 h-3.5" />} title="Manager & Tactics" defaultOpen={false}>
         <div className="grid grid-cols-2 gap-3 mb-3">
           {data.homeManager ? (
             <div>
@@ -1602,14 +1624,10 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
         <div className="bg-white/[0.03] rounded-lg p-3 border border-white/[0.06]">
           <p className="text-xs text-slate-300">{analysis.manager.tacticalMatchup}</p>
         </div>
-      </Card>
+      </ExpandableSection>
 
-      {/* Expected Gameplay */}
-      <Card className="glass-card p-4">
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <Zap className="w-3.5 h-3.5 text-amber-400" />
-          Expected Gameplay
-        </h3>
+      {/* Gameplay */}
+      <ExpandableSection icon={<Zap className="w-3.5 h-3.5" />} title="Expected Gameplay" defaultOpen={false}>
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
             <p className="text-[10px] text-muted-foreground mb-1">Style</p>
@@ -1638,42 +1656,36 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
           </div>
         </div>
         <p className="text-[10px] text-slate-400 mt-3 italic">{analysis.gameplay.note}</p>
-      </Card>
+      </ExpandableSection>
 
-      {/* Referee Profile */}
-      {data.referee && (
-        <Card className="glass-card p-4">
-          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-            <User className="w-3.5 h-3.5 text-slate-400" />
-            Referee: {data.referee.name}
-          </h3>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span className="text-muted-foreground">Career Games:</span>{' '}
-              <span className="font-mono">{data.referee.careerGames}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Avg Goals:</span>{' '}
-              <span className="font-mono">{data.referee.avgGoalsPerMatch.toFixed(2)}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Avg Yellows:</span>{' '}
-              <span className="font-mono text-amber-400">{data.referee.avgYellowPerMatch.toFixed(1)}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Avg Reds:</span>{' '}
-              <span className="font-mono text-red-400">{data.referee.avgRedPerMatch.toFixed(2)}</span>
+      {/* Situational Factors */}
+      <ExpandableSection icon={<Thermometer className="w-3.5 h-3.5" />} title="Situational Factors" defaultOpen={false}>
+        <div className="grid grid-cols-2 gap-2">
+          <SituationalItem label="Derby" value={analysis.situation.isDerby ? 'Yes' : 'No'} color={analysis.situation.isDerby ? 'text-orange-400' : 'text-slate-400'} />
+          <SituationalItem label="Weather" value={analysis.situation.weatherNote || 'Clear'} color={analysis.situation.weatherNote ? 'text-amber-400' : 'text-emerald-400'} />
+          <SituationalItem label="Travel" value={analysis.situation.travelNote || 'Normal'} color="text-slate-400" />
+          <SituationalItem label="Home Motivation" value={analysis.situation.homeMotivation} color={getMotivationColor(analysis.situation.homeMotivation)} />
+          <SituationalItem label="Away Motivation" value={analysis.situation.awayMotivation} color={getMotivationColor(analysis.situation.awayMotivation)} />
+          {analysis.situation.fatigueNote && (
+            <SituationalItem label="Fatigue" value={analysis.situation.fatigueNote} color="text-amber-400" />
+          )}
+        </div>
+        {analysis.situation.keyAbsences.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[10px] text-red-400 font-medium mb-1">Key Absences:</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {analysis.situation.keyAbsences.map((name, i) => (
+                <Badge key={i} className="bg-red-500/10 text-red-400 border-red-500/20 text-[9px] px-1.5 py-0">
+                  {name}
+                </Badge>
+              ))}
             </div>
           </div>
-        </Card>
-      )}
+        )}
+      </ExpandableSection>
 
       {/* League Context */}
-      <Card className="glass-card p-4">
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <Trophy className="w-3.5 h-3.5 text-amber-400" />
-          League Context
-        </h3>
+      <ExpandableSection icon={<Trophy className="w-3.5 h-3.5" />} title="League Context" defaultOpen={false}>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
             <span className="text-muted-foreground">Avg Goals:</span>{' '}
@@ -1694,27 +1706,71 @@ function AnalysisTab({ data }: { data: MatchDetailResponse }) {
             </span>
           </div>
         </div>
-      </Card>
+      </ExpandableSection>
+
+      {/* Referee */}
+      {data.referee && (
+        <ExpandableSection icon={<User className="w-3.5 h-3.5" />} title={`Referee: ${data.referee.name}`} defaultOpen={false}>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-muted-foreground">Career Games:</span>{' '}
+              <span className="font-mono">{data.referee.careerGames}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Avg Goals:</span>{' '}
+              <span className="font-mono">{data.referee.avgGoalsPerMatch.toFixed(2)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Avg Yellows:</span>{' '}
+              <span className="font-mono text-amber-400">{data.referee.avgYellowPerMatch.toFixed(1)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Avg Reds:</span>{' '}
+              <span className="font-mono text-red-400">{data.referee.avgRedPerMatch.toFixed(2)}</span>
+            </div>
+          </div>
+        </ExpandableSection>
+      )}
     </div>
   );
 }
 
-function ModelRow({ name, home, draw, away }: { name: string; home: number; draw: number; away: number }) {
-  const max = Math.max(home, draw, away);
+// ── Expandable Section ──────────────────────────────────────────────
+
+function ExpandableSection({ icon, title, defaultOpen, children }: {
+  icon: React.ReactNode;
+  title: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-[10px] text-muted-foreground w-24 truncate">{name}</span>
-      <div className="flex-1 flex gap-0.5">
-        <div className={`h-3 rounded-l-sm ${home === max ? 'bg-emerald-500/60' : 'bg-emerald-500/20'}`} style={{ width: `${home}%` }} />
-        <div className={`h-3 ${draw === max ? 'bg-amber-500/60' : 'bg-amber-500/20'}`} style={{ width: `${draw}%` }} />
-        <div className={`h-3 rounded-r-sm ${away === max ? 'bg-red-500/60' : 'bg-red-500/20'}`} style={{ width: `${away}%` }} />
-      </div>
-      <div className="flex gap-1.5 text-[9px] font-mono w-24 justify-end">
-        <span className={home === max ? 'text-emerald-400' : 'text-slate-400'}>{Math.round(home)}%</span>
-        <span className={draw === max ? 'text-amber-400' : 'text-slate-400'}>{Math.round(draw)}%</span>
-        <span className={away === max ? 'text-red-400' : 'text-slate-400'}>{Math.round(away)}%</span>
-      </div>
-    </div>
+    <Card className="glass-card-premium overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center gap-2 p-4 text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <span className="text-cyan-400">{icon}</span>
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex-1">{title}</span>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
   );
 }
 

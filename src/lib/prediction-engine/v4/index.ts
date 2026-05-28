@@ -46,6 +46,13 @@ import {
   kellyCriterion, weightedStdDev, neutralPrediction, poissonProb,
 } from '../utils';
 
+// ── V4.1 Intelligence Upgrades ────────────────────────────────────
+import { loadPerMatchXg, applyPerMatchXgAdjustment } from './intelligence/per-match-xg';
+import { detectSteam, applySteamToCandidates } from './intelligence/steam-detection';
+import { assessPlayerImpact, applyPlayerImpact } from './intelligence/player-impact';
+import { getLeagueCalibration, applyLeagueCalibration } from './intelligence/league-calibration';
+import { computeDeepH2H, applyDeepH2HAdjustments } from './intelligence/deep-h2h';
+
 // ── In-memory caches ──────────────────────────────────────────────
 let eloCache = new Map<number, { rating: number; matches: number }>();
 let eloBuilt = false;
@@ -302,6 +309,14 @@ export async function generateV4Tips(params?: {
       const refereeIntel = buildRefereeIntel(refereeRow.rows[0] as any || null);
       const lineupIntel = buildLineupIntel(lineupRow.rows[0] as any || null, event.home_team as string, event.away_team as string);
 
+      // ── PHASE 4.5: Load V4.1 Intelligence Data (parallel) ─────
+      const [perMatchXgData, deepH2HData, leagueCalibData, playerImpactData] = await Promise.all([
+        loadPerMatchXg(homeTeamId, awayTeamId, event.home_team as string, event.away_team as string, 8).catch(() => null),
+        computeDeepH2H(homeTeamId, awayTeamId, event.home_team as string, event.away_team as string).catch(() => null),
+        getLeagueCalibration(leagueId, leagueName).catch(() => null),
+        assessPlayerImpact(eventId, homeTeamId, awayTeamId, lineupRow.rows[0] as any || null).catch(() => null),
+      ]);
+
       // ── PHASE 5: Adjust probabilities ──────────────────────────
       let { homeWinProb, drawProb, awayWinProb, homeExpectedGoals, awayExpectedGoals } = combined;
 
@@ -339,6 +354,44 @@ export async function generateV4Tips(params?: {
         const strengthDiff = lineupIntel.homeSquadStrength - lineupIntel.awaySquadStrength;
         homeWinProb += strengthDiff * 0.1;
         awayWinProb -= strengthDiff * 0.1;
+      }
+
+      // ── PHASE 5.5: V4.1 Intelligence Upgrades ────────────────────
+
+      // 1. Per-Match xG (biggest upgrade — actual match xG not season averages)
+      if (perMatchXgData && perMatchXgData.reliability > 0.2) {
+        const xgAdj = applyPerMatchXgAdjustment(homeExpectedGoals, awayExpectedGoals, perMatchXgData);
+        homeExpectedGoals = xgAdj.adjustedHomeXg;
+        awayExpectedGoals = xgAdj.adjustedAwayXg;
+      }
+
+      // 2. Player Impact (key absences shift xG and win probability)
+      if (playerImpactData && playerImpactData.severity !== 'none') {
+        const pAdj = applyPlayerImpact(homeExpectedGoals, awayExpectedGoals, homeWinProb, awayWinProb, playerImpactData);
+        homeExpectedGoals = pAdj.adjustedHomeXg;
+        awayExpectedGoals = pAdj.adjustedAwayXg;
+        homeWinProb = pAdj.adjustedHomeWinProb;
+        awayWinProb = pAdj.adjustedAwayWinProb;
+      }
+
+      // 3. League Calibration (real stats instead of hardcoded 0.26 draw rate)
+      if (leagueCalibData && leagueCalibData.matchesSampled >= 10) {
+        const lAdj = applyLeagueCalibration(homeWinProb, drawProb, awayWinProb, homeExpectedGoals, awayExpectedGoals, leagueCalibData);
+        homeWinProb = lAdj.adjustedHomeWin;
+        drawProb = lAdj.adjustedDraw;
+        awayWinProb = lAdj.adjustedAwayWin;
+        homeExpectedGoals = lAdj.adjustedHomeXg;
+        awayExpectedGoals = lAdj.adjustedAwayXg;
+      }
+
+      // 4. Deep H2H (recency-weighted, venue-specific adjustments)
+      if (deepH2HData && deepH2HData.reliability > 0.15) {
+        const h2hAdj = applyDeepH2HAdjustments(homeWinProb, drawProb, awayWinProb, homeExpectedGoals, awayExpectedGoals, deepH2HData);
+        homeWinProb = h2hAdj.adjustedHomeWin;
+        drawProb = h2hAdj.adjustedDraw;
+        awayWinProb = h2hAdj.adjustedAwayWin;
+        homeExpectedGoals = h2hAdj.adjustedHomeXg;
+        awayExpectedGoals = h2hAdj.adjustedAwayXg;
       }
 
       // Situational adjustments
@@ -394,7 +447,20 @@ export async function generateV4Tips(params?: {
       const market = buildV4MarketData(oddsRow.rows[0] as any, polymarketRow.rows[0] as any);
 
       // ── PHASE 8: Evaluate ALL possible bets ────────────────────
-      const candidates = evaluateAllCandidates(markets, market, models, weights, isDerby);
+      let candidates = evaluateAllCandidates(markets, market, models, weights, isDerby);
+
+      // ── PHASE 8.5: Apply Steam Detection ────────────────────────
+      // Steam = sharp odds movement across multiple bookmakers
+      let steamResult = null;
+      try {
+        steamResult = await detectSteam(eventId, {
+          homeWin: homeWinProb, draw: drawProb, awayWin: awayWinProb,
+          over25: markets.over25, bttsYes: markets.bttsYes,
+        });
+        if (steamResult.hasSteam) {
+          candidates = applySteamToCandidates(candidates, steamResult);
+        }
+      } catch { /* Steam detection optional */ }
 
       // ── PHASE 9: Risk assessment ───────────────────────────────
       const modelAgreement = calculateModelAgreement(models, weights);

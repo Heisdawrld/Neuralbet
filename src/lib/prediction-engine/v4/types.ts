@@ -12,7 +12,7 @@
 // If there's no edge, they walk. That's v4.
 // ═══════════════════════════════════════════════════════════════════════
 
-export const ENGINE_VERSION = '4.0.0';
+export const ENGINE_VERSION = '4.1.0';
 
 // ── The One Tip ───────────────────────────────────────────────────────
 
