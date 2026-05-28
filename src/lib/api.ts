@@ -288,3 +288,13 @@ export async function fetchV4Tips(params?: {
   if (!res.ok) throw new Error(`V4 predictions API error: ${res.status}`);
   return res.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// MATCH DETAIL — Full match data from Turso DB
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function fetchMatchDetail(eventId: number): Promise<any> {
+  const res = await fetch(`/api/match/${eventId}`);
+  if (!res.ok) throw new Error(`Match detail API error: ${res.status}`);
+  return res.json();
+}

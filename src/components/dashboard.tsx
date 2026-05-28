@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import type { MatchData } from '@/lib/types';
 
 export function Dashboard() {
-  const { selectedDate, setSelectedDate } = useAppStore();
+  const { selectedDate, setSelectedDate, openMatchPanel } = useAppStore();
 
   const { data: eventsData, isLoading: eventsLoading } = useQuery({
     queryKey: ['events', selectedDate],
@@ -120,7 +120,7 @@ export function Dashboard() {
           <ScrollArea className="w-full whitespace-nowrap">
             <div className="flex gap-3 pb-4">
               {liveMatches.map((match: MatchData) => (
-                <LiveMatchCard key={match.id} match={match} />
+                <LiveMatchCard key={match.id} match={match} onClick={() => openMatchPanel(match.id)} />
               ))}
             </div>
             <ScrollBar orientation="horizontal" />
@@ -148,7 +148,7 @@ export function Dashboard() {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <TipCard tip={tip} />
+                  <TipCard tip={tip} onMatchClick={() => openMatchPanel(tip.eventId)} />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -168,7 +168,7 @@ export function Dashboard() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {silverTips.slice(0, 4).map((tip) => (
-              <TipCard key={tip.eventId} tip={tip} />
+              <TipCard key={tip.eventId} tip={tip} onMatchClick={() => openMatchPanel(tip.eventId)} />
             ))}
           </div>
         </div>
@@ -216,9 +216,9 @@ function StatCard({
   );
 }
 
-function LiveMatchCard({ match }: { match: MatchData }) {
+function LiveMatchCard({ match, onClick }: { match: MatchData; onClick?: () => void }) {
   return (
-    <Card className="glass-card glow-cyan min-w-[220px] p-3 cursor-pointer hover-glow transition-all">
+    <Card className="glass-card glow-cyan min-w-[220px] p-3 cursor-pointer hover-glow transition-all" onClick={onClick}>
       <div className="flex items-center gap-2 mb-2">
         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 live-pulse" />
         <span className="text-[10px] text-cyan-400 font-mono uppercase tracking-wider">

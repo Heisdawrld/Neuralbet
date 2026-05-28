@@ -10,8 +10,10 @@ import { ProbabilityBar } from '@/components/probability-bar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Crosshair, TrendingUp, Star, AlertTriangle, DollarSign, Percent, Shield, Flame } from 'lucide-react';
 import type { OurValueBetData } from '@/lib/types';
+import { useAppStore } from '@/lib/store';
 
 export function ValueBets() {
+  const { openMatchPanel } = useAppStore();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['our-value-bets'],
     queryFn: fetchOurValueBets,
@@ -114,7 +116,7 @@ export function ValueBets() {
                   exit={{ opacity: 0, x: 20 }}
                   transition={{ duration: 0.3, delay: idx * 0.05 }}
                 >
-                  <PunterValueBetCard valueBet={vb} />
+                  <PunterValueBetCard valueBet={vb} onMatchClick={() => openMatchPanel(vb.match.id)} />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -130,7 +132,7 @@ export function ValueBets() {
   );
 }
 
-function PunterValueBetCard({ valueBet }: { valueBet: OurValueBetData }) {
+function PunterValueBetCard({ valueBet, onMatchClick }: { valueBet: OurValueBetData; onMatchClick?: () => void }) {
   const edgePct = (valueBet.edge * 100).toFixed(1);
   const modelPct = (valueBet.modelProbability * 100).toFixed(1);
   const impliedPct = (valueBet.impliedProbability * 100).toFixed(1);
@@ -149,7 +151,7 @@ function PunterValueBetCard({ valueBet }: { valueBet: OurValueBetData }) {
   ));
 
   return (
-    <Card className="glass-card hover-glow p-4 transition-all duration-300">
+    <Card className="glass-card hover-glow p-4 transition-all duration-300 cursor-pointer" onClick={onMatchClick}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {/* Header */}

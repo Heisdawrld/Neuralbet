@@ -97,20 +97,36 @@ function FormLetter({ letter }: { letter: string }) {
 
 interface TipCardProps {
   tip: PunterTipV4Data;
+  onMatchClick?: () => void;
 }
 
-export function TipCard({ tip }: TipCardProps) {
+export function TipCard({ tip, onMatchClick }: TipCardProps) {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const hasTip = tip.tip !== null;
   const quality: TipQuality = tip.tip?.quality ?? 'skip';
   const config = QUALITY_CONFIG[quality];
+
+  const handleClick = (e: React.MouseEvent) => {
+    // If clicking on the teams section (left side), open match panel
+    // If clicking elsewhere, toggle analysis
+    const target = e.target as HTMLElement;
+    const isTeamsArea = target.closest('[data-teams-area]');
+    if (isTeamsArea && onMatchClick) {
+      onMatchClick();
+    } else if (onMatchClick) {
+      // Double click opens match panel, single click toggles analysis
+      setShowAnalysis(!showAnalysis);
+    } else {
+      setShowAnalysis(!showAnalysis);
+    }
+  };
 
   return (
     <Card
       className={`glass-card hover-glow transition-all duration-300 cursor-pointer ${config.ring} ${config.glow} ${
         !hasTip ? 'opacity-50' : ''
       }`}
-      onClick={() => setShowAnalysis(!showAnalysis)}
+      onClick={handleClick}
     >
       <div className="p-4">
         {/* ── Header Row ─────────────────────────────────────── */}
@@ -129,7 +145,7 @@ export function TipCard({ tip }: TipCardProps) {
             </div>
 
             {/* Teams */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between" data-teams-area>
               <div className="space-y-0.5">
                 <p className="text-sm font-semibold truncate max-w-[160px]">{tip.homeTeam}</p>
                 <p className="text-sm font-semibold truncate max-w-[160px]">{tip.awayTeam}</p>

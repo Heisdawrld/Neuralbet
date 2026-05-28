@@ -8,6 +8,7 @@ import { ValueBets } from '@/components/value-bets';
 import { LiveMatches } from '@/components/live-matches';
 import { Leagues } from '@/components/leagues';
 import { Bankroll } from '@/components/bankroll';
+import { MatchDetailPanel } from '@/components/match-detail-panel';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { NavTab } from '@/lib/types';
 import {
@@ -250,6 +251,7 @@ export default function Home() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppContent />
+      <MatchDetailPanel />
     </QueryClientProvider>
   );
 }

@@ -12,6 +12,11 @@ interface AppState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   selectedLeagueForStandings: number | null;
   setSelectedLeagueForStandings: (id: number | null) => void;
+  // Match Detail Panel
+  selectedMatchId: number | null;
+  isMatchPanelOpen: boolean;
+  openMatchPanel: (matchId: number) => void;
+  closeMatchPanel: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -25,4 +30,9 @@ export const useAppStore = create<AppState>((set) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   selectedLeagueForStandings: null,
   setSelectedLeagueForStandings: (id) => set({ selectedLeagueForStandings: id }),
+  // Match Detail Panel
+  selectedMatchId: null,
+  isMatchPanelOpen: false,
+  openMatchPanel: (matchId) => set({ selectedMatchId: matchId, isMatchPanelOpen: true }),
+  closeMatchPanel: () => set({ isMatchPanelOpen: false, selectedMatchId: null }),
 }));

@@ -11,9 +11,11 @@ import { Radio, Clock, AlertCircle, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
 import type { MatchData } from '@/lib/types';
+import { useAppStore } from '@/lib/store';
 
 export function LiveMatches() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const { openMatchPanel } = useAppStore();
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['live-matches'],
@@ -81,7 +83,7 @@ export function LiveMatches() {
                   exit={{ opacity: 0, y: -15 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <LiveMatchDetail match={match} />
+                  <LiveMatchDetail match={match} onMatchClick={() => openMatchPanel(match.id)} />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -98,7 +100,7 @@ export function LiveMatches() {
   );
 }
 
-function LiveMatchDetail({ match }: { match: MatchData }) {
+function LiveMatchDetail({ match, onMatchClick }: { match: MatchData; onMatchClick?: () => void }) {
   const { data: oddsData } = useQuery({
     queryKey: ['odds', match.id],
     queryFn: () => fetchEventOdds(match.id),
@@ -122,7 +124,7 @@ function LiveMatchDetail({ match }: { match: MatchData }) {
   const hasOdds = oddsData && (oddsData.homeWin || oddsData.draw || oddsData.awayWin);
 
   return (
-    <Card className="glass-card glow-cyan p-4">
+    <Card className="glass-card glow-cyan p-4 cursor-pointer" onClick={onMatchClick}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">

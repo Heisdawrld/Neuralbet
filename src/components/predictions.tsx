@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import type { TipQuality } from '@/lib/types';
+import { useAppStore } from '@/lib/store';
 
 type QualityFilter = 'all' | 'gold' | 'silver' | 'bronze' | 'skip';
 
@@ -24,6 +25,7 @@ export function Predictions() {
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all');
   const [leagueFilter, setLeagueFilter] = useState<string>('all');
   const [showSkipped, setShowSkipped] = useState(false);
+  const { openMatchPanel } = useAppStore();
 
   const { data: tipsData, isLoading } = useQuery({
     queryKey: ['v4-tips', 'all'],
@@ -181,7 +183,7 @@ export function Predictions() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.25 }}
                 >
-                  <TipCard tip={tip} />
+                  <TipCard tip={tip} onMatchClick={() => openMatchPanel(tip.eventId)} />
                 </motion.div>
               ))}
             </AnimatePresence>
