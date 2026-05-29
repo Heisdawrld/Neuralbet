@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    name: Test + build (strict TS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Test (vitest)
+        run: npm test
+
+      - name: Build (strict TS — ignoreBuildErrors is OFF)
+        run: npm run build
+        env:
+          # Build runs without real BSD / Turso credentials; routes log
+          # warnings but the build itself should still produce 200s.
+          BSD_API_KEY: ''
+          BSD_API_BASE_URL: 'https://sports.bzzoiro.com/api/v2/'
+          TURSO_DB_URL: ''
+          TURSO_AUTH_TOKEN: ''
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true  # lint warnings should not block — fix gradually

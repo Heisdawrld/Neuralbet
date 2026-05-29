@@ -629,13 +629,13 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
               <ProbRow
                 label={data.event.homeTeam}
                 modelProb={tip.probabilities.homeWin}
-                odds={data.odds?.homeWin}
+                odds={data.odds?.homeWin ?? null}
               />
-              <ProbRow label="Draw" modelProb={tip.probabilities.draw} odds={data.odds?.draw} />
+              <ProbRow label="Draw" modelProb={tip.probabilities.draw} odds={data.odds?.draw ?? null} />
               <ProbRow
                 label={data.event.awayTeam}
                 modelProb={tip.probabilities.awayWin}
-                odds={data.odds?.awayWin}
+                odds={data.odds?.awayWin ?? null}
               />
             </div>
             <Separator className="my-3 bg-white/[0.06]" />

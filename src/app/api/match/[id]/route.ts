@@ -181,8 +181,8 @@ export async function GET(
     const homeCoachId = event.home_coach_id ? Number(event.home_coach_id) : null;
     const awayCoachId = event.away_coach_id ? Number(event.away_coach_id) : null;
 
-    let homeManager = null;
-    let awayManager = null;
+    let homeManager: any = null;
+    let awayManager: any = null;
     if (homeCoachId) {
       const mgrResult = await db.execute({ sql: `SELECT * FROM managers WHERE id = ?`, args: [homeCoachId] });
       homeManager = mgrResult.rows[0] || null;
@@ -193,7 +193,7 @@ export async function GET(
     }
 
     // ── Referee ────────────────────────────────────────────────────────
-    let referee = null;
+    let referee: any = null;
     const refereeId = event.referee_id ? Number(event.referee_id) : null;
     if (refereeId) {
       const refResult = await db.execute({ sql: `SELECT * FROM referees WHERE id = ?`, args: [refereeId] });
@@ -225,7 +225,7 @@ export async function GET(
     });
 
     // ── Engine Prediction (V5 engine, adapted to v4 PunterTip shape for frontend compat) ────────
-    let enginePrediction = null;
+    let enginePrediction: import("@/lib/prediction-engine/v5/adapters/punter-tip").PunterTipV4 | null = null;
     try {
       const v5Result = await runV5Prediction(eventId);
       enginePrediction = adaptV5ToPunterTip(v5Result, {

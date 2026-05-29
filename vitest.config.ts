@@ -22,9 +22,7 @@ export default defineConfig({
       ],
     },
     // Force deterministic ordering & no parallel for math tests
-    poolOptions: {
-      threads: { singleThread: true },
-    },
+    fileParallelism: false,
     testTimeout: 10000,
   },
 });

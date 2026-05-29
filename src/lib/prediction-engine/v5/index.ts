@@ -20,6 +20,7 @@ import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from './math/poisson';
 import { calibrateProbabilities } from './math/calibration';
+import type { ManagerProfile, MarketCandidate, ScriptOutput } from './types';
 import { applyDerbyToVolatility, applyDerbyToProbs } from './intelligence/derby';
 import { applyManagerDebutToProbs } from './intelligence/manager-debut';
 import { applyRestDayToXg } from './intelligence/rest-day';
@@ -202,6 +203,36 @@ export interface FeatureVector {
   priceConfidenceAdjustment?: number;
   priceQuoteCount?: number;
   priceBookmakerCount?: number;
+
+  // ── Phase 2 intelligence module signals ─────────────────────────────
+  // Manager-debut (Phase 2.3)
+  homeManagerMatchesAtClub?: number | null;
+  homeManagerDaysAtClub?: number | null;
+  awayManagerMatchesAtClub?: number | null;
+  awayManagerDaysAtClub?: number | null;
+  // Rest-day (Phase 2.4)
+  homeRestDays?: number | null;
+  awayRestDays?: number | null;
+  // Weather × style (Phase 2.6)
+  weatherCode?: number | null;
+  weatherDescription?: string | null;
+  weatherWindSpeedKmh?: number | null;
+  weatherTemperatureC?: number | null;
+  // Late-season motivation (Phase 2.7)
+  eventMatchday?: number | null;
+  leagueTotalMatchdays?: number | null;
+  leagueTeamCount?: number | null;
+  leagueTopPoints?: number | null;
+  leagueRelegationBoundaryPoints?: number | null;
+  homePosition?: number | null;
+  awayPosition?: number | null;
+  homePoints?: number | null;
+  awayPoints?: number | null;
+  // Set-piece (Phase 2.8)
+  refereeAvgYellowPerMatch?: number | null;
+  // Lineup decay (Phase 2.9)
+  hoursToKickoff?: number | null;
+  lineupStatus?: string | null;
 }
 
 export type { MarketCandidate } from './types';
@@ -416,7 +447,7 @@ async function preparePredictionContext(fixtureId: number): Promise<{
   const [
     oddsRow, leagueRow, homeTeamRow, awayTeamRow,
     homeStandings, awayStandings, h2hMatches,
-    homeManagerRow, awayManagerRow, lineupRow,
+    homeManagerRow, awayManagerRow, lineupRow, refereeRow,
   ] = await Promise.all([
     db.execute({ sql: `SELECT * FROM event_odds WHERE event_id = ?`, args: [fixtureId] }),
     db.execute({ sql: `SELECT * FROM leagues WHERE id = ?`, args: [leagueId] }),
@@ -435,6 +466,9 @@ async function preparePredictionContext(fixtureId: number): Promise<{
       ? db.execute({ sql: `SELECT * FROM managers WHERE id = ?`, args: [awayCoachId] })
       : Promise.resolve({ rows: [] as any[] }),
     db.execute({ sql: `SELECT lineup_status FROM event_lineups WHERE event_id = ?`, args: [fixtureId] }),
+    event.referee_id
+      ? db.execute({ sql: `SELECT * FROM referees WHERE id = ?`, args: [Number(event.referee_id)] })
+      : Promise.resolve({ rows: [] as any[] }),
   ]);
 
   // Build odds object
@@ -567,8 +601,9 @@ async function preparePredictionContext(fixtureId: number): Promise<{
     // populate the others when this is moved to that file later.
 
     // Set-piece signals (intelligence/set-piece-specialist.ts)
-    // refereeAvgYellowPerMatch loaded from referee row (populated above as refereeAvgCards)
-    refereeAvgYellowPerMatch: refereeAvgCards,
+    refereeAvgYellowPerMatch: refereeRow.rows[0]?.avg_yellow_per_match != null
+      ? Number(refereeRow.rows[0].avg_yellow_per_match)
+      : null,
 
     // Lineup decay (intelligence/lineup-decay.ts)
     hoursToKickoff: (() => {

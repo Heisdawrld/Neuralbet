@@ -120,7 +120,11 @@ export async function fetchLeagueStandings(leagueId: number): Promise<{
       ga: s.ga,
       gd: s.gd,
       pts: s.pts,
+      xgf: (s as any).xgf ?? null,
+      xga: (s as any).xga ?? null,
+      xgd: (s as any).xgd ?? null,
       form: s.form,
+      live: (s as any).live ?? false,
     })),
     season: {
       name: data.season.name,

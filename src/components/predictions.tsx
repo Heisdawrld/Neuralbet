@@ -178,7 +178,7 @@ export function Predictions() {
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           <span>Engine: Punter Brain v4</span>
           <span className="text-white/10">·</span>
-          <span>{tips.count} matches analyzed</span>
+          <span>{tipsData?.count ?? 0} matches analyzed</span>
           <span className="text-white/10">·</span>
           <span>Data refreshes every 60s</span>
         </div>
