@@ -24,6 +24,9 @@ import { applyDerbyToVolatility, applyDerbyToProbs } from './intelligence/derby'
 import { applyManagerDebutToProbs } from './intelligence/manager-debut';
 import { applyRestDayToXg } from './intelligence/rest-day';
 import { applyWeatherStyleToXg } from './intelligence/weather-style';
+import { applyMotivationToXg } from './intelligence/late-season-motivation';
+import { applySetPieceToXg } from './intelligence/set-piece-specialist';
+import { adjustLineupCertainty } from './intelligence/lineup-decay';
 import { estimateExpectedGoals } from './xg';
 import { classifyMatchScript } from './script';
 import {
@@ -413,7 +416,7 @@ async function preparePredictionContext(fixtureId: number): Promise<{
   const [
     oddsRow, leagueRow, homeTeamRow, awayTeamRow,
     homeStandings, awayStandings, h2hMatches,
-    homeManagerRow, awayManagerRow,
+    homeManagerRow, awayManagerRow, lineupRow,
   ] = await Promise.all([
     db.execute({ sql: `SELECT * FROM event_odds WHERE event_id = ?`, args: [fixtureId] }),
     db.execute({ sql: `SELECT * FROM leagues WHERE id = ?`, args: [leagueId] }),
@@ -431,6 +434,7 @@ async function preparePredictionContext(fixtureId: number): Promise<{
     awayCoachId
       ? db.execute({ sql: `SELECT * FROM managers WHERE id = ?`, args: [awayCoachId] })
       : Promise.resolve({ rows: [] as any[] }),
+    db.execute({ sql: `SELECT lineup_status FROM event_lineups WHERE event_id = ?`, args: [fixtureId] }),
   ]);
 
   // Build odds object
@@ -554,6 +558,28 @@ async function preparePredictionContext(fixtureId: number): Promise<{
     weatherDescription: (event.weather_description as string) || null,
     weatherWindSpeedKmh: event.weather_wind_speed != null ? Number(event.weather_wind_speed) : null,
     weatherTemperatureC: event.weather_temperature_c != null ? Number(event.weather_temperature_c) : null,
+
+    // Late-season motivation signals (intelligence/late-season-motivation.ts)
+    eventMatchday: event.round_number != null ? Number(event.round_number) : null,
+    // leagueTotalMatchdays / leagueTeamCount / topPoints / relegationBoundary
+    // are computed in feature-builder.ts when the league has full standings data.
+    // For now we surface what the events row gives us — feature-builder will
+    // populate the others when this is moved to that file later.
+
+    // Set-piece signals (intelligence/set-piece-specialist.ts)
+    // refereeAvgYellowPerMatch loaded from referee row (populated above as refereeAvgCards)
+    refereeAvgYellowPerMatch: refereeAvgCards,
+
+    // Lineup decay (intelligence/lineup-decay.ts)
+    hoursToKickoff: (() => {
+      try {
+        const kickoffMs = new Date(event.event_date as string).getTime();
+        if (!Number.isFinite(kickoffMs)) return null;
+        const diffMs = kickoffMs - Date.now();
+        return diffMs > 0 ? diffMs / (1000 * 60 * 60) : 0;
+      } catch { return null; }
+    })(),
+    lineupStatus: lineupRow.rows[0]?.lineup_status as string ?? null,
     // Managers — built from joined rows above
     homeManager: homeManagerRow.rows[0] ? {
       name: homeManagerRow.rows[0].name as string,
@@ -596,7 +622,15 @@ function runProbabilityPipeline(features: FeatureVector, script: ScriptOutput): 
   const weathered = applyWeatherStyleToXg(xg.homeExpectedGoals, xg.awayExpectedGoals, features);
   xg.homeExpectedGoals = weathered.homeXg;
   xg.awayExpectedGoals = weathered.awayXg;
-  xg.totalExpectedGoals = parseFloat((weathered.homeXg + weathered.awayXg).toFixed(3));
+  // Late-season motivation: title/Europe/relegation tightens; dead rubbers loosen
+  const motivated = applyMotivationToXg(xg.homeExpectedGoals, xg.awayExpectedGoals, features);
+  xg.homeExpectedGoals = motivated.homeXg;
+  xg.awayExpectedGoals = motivated.awayXg;
+  // Set-piece specialist boost: strict ref + high-scoring side
+  const setPieced = applySetPieceToXg(xg.homeExpectedGoals, xg.awayExpectedGoals, features);
+  xg.homeExpectedGoals = setPieced.homeXg;
+  xg.awayExpectedGoals = setPieced.awayXg;
+  xg.totalExpectedGoals = parseFloat((setPieced.homeXg + setPieced.awayXg).toFixed(3));
   const sm = buildScoreMatrix(xg.homeExpectedGoals, xg.awayExpectedGoals);
   const rawProbs = deriveMarketProbabilities(sm);
 
@@ -790,6 +824,12 @@ export async function runV5Prediction(fixtureId: number): Promise<PredictionResu
       engineVersion: '5.0.0',
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  // Lineup-decay pre-step: dampen lineupCertaintyScore based on hours-to-kickoff.
+  // Predicted lineups get less reliable the further from kickoff.
+  if (ctx.features?.lineupCertaintyScore != null) {
+    ctx.features.lineupCertaintyScore = adjustLineupCertainty(ctx.features);
   }
 
   // Derby pre-step: bump matchChaosScore so the classifier knows

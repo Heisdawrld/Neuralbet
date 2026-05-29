@@ -22,17 +22,24 @@ export type IntelligenceModule =
   | 'manager_debut'      // Phase 2.3
   | 'rest_day'           // Phase 2.4
   | 'late_season'        // Phase 2.5
-  | 'weather_style';     // Phase 2.6 — etc.
+  | 'weather_style'      // Phase 2.6
+  | 'late_season_motivation' // Phase 2.7
+  | 'set_piece_specialist'   // Phase 2.8
+  | 'lineup_decay';          // Phase 2.9
 
 export type IntelligenceFlags = Partial<Record<IntelligenceModule, boolean>>;
 
 const DEFAULTS: Required<Pick<IntelligenceFlags,
-  'derby' | 'manager_debut' | 'rest_day' | 'late_season' | 'weather_style'>> = {
+  'derby' | 'manager_debut' | 'rest_day' | 'late_season' | 'weather_style'
+  | 'late_season_motivation' | 'set_piece_specialist' | 'lineup_decay'>> = {
   derby: true,
   manager_debut: true,
   rest_day: true,
   late_season: true,
   weather_style: true,
+  late_season_motivation: true,
+  set_piece_specialist: true,
+  lineup_decay: true,
 };
 
 let activeFlags: Record<IntelligenceModule, boolean> = { ...DEFAULTS } as any;

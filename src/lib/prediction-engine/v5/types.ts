@@ -98,6 +98,20 @@ export interface FeatureVector {
   weatherWindSpeedKmh?: number | null;
   weatherTemperatureC?: number | null;
 
+  // Late-season motivation signals (intelligence/late-season-motivation.ts)
+  eventMatchday?: number | null;
+  leagueTotalMatchdays?: number | null;
+  leagueTeamCount?: number | null;
+  leagueTopPoints?: number | null;
+  leagueRelegationBoundaryPoints?: number | null;
+
+  // Set-piece signals (intelligence/set-piece-specialist.ts)
+  refereeAvgYellowPerMatch?: number | null;
+
+  // Lineup decay (intelligence/lineup-decay.ts)
+  hoursToKickoff?: number | null;
+  lineupStatus?: string | null;
+
   // Referee profile
   refereeAvgGoals: number | null;
   refereeAvgCards: number | null;
