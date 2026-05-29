@@ -257,36 +257,33 @@ export async function syncH2HForUpcomingFixtures(daysAhead: number = 7): Promise
           return { skipped: true as const, reason: 'no_team' as const };
         }
         try {
-          const result = await syncH2HForFixture(fixtureId, homeTeamId, awayTeamId);
-          return { skipped: false as const, ...result };
+          // syncH2HForFixture returns { rowsWritten, skipped: 'fresh'|null, meetingsFound }
+          return await syncH2HForFixture(fixtureId, homeTeamId, awayTeamId);
         } catch (err: any) {
           return { skipped: true as const, reason: 'error' as const, message: err?.message };
         }
       }),
     );
     for (const r of results) {
-      if (r.skipped) {
-        if (r.reason === 'no_team') stats.fixturesWithoutHomeTeam++;
-        else stats.errors.push(`H2H sync error: ${r.message ?? 'unknown'}`);
+      // Branch 1: outer-skip (no team data or error before sync ran)
+      if ((r as any).skipped === true) {
+        if ((r as any).reason === 'no_team') stats.fixturesWithoutHomeTeam++;
+        else stats.errors.push(`H2H sync error: ${(r as any).message ?? 'unknown'}`);
         continue;
       }
-      if (r.skipped === false && r.skipped !== undefined) {
-        if (r.rowsWritten > 0 || r.meetingsFound > 0) stats.bsdCallsMade++;
-        if (r.skipped === null) {
-          // fresh skip path
-        }
+      // Branch 2: sync ran. r has shape { skipped: 'fresh' | null, rowsWritten, meetingsFound }
+      const sub = r as { skipped: 'fresh' | null; rowsWritten: number; meetingsFound: number };
+      if (sub.skipped === 'fresh') {
+        stats.fixturesSkippedFresh++;
+        continue;
       }
-      if (r.skipped === false) {
-        if ((r as any).meetingsFound === 0 && (r as any).skipped !== 'fresh') {
-          stats.fixturesWithNoH2H++;
-          stats.bsdCallsMade++;
-        } else if ((r as any).skipped === 'fresh') {
-          stats.fixturesSkippedFresh++;
-        } else if ((r as any).rowsWritten > 0) {
-          stats.fixturesWithH2HFound++;
-          stats.h2hRowsWritten += (r as any).rowsWritten;
-          stats.bsdCallsMade++;
-        }
+      // BSD was actually called
+      stats.bsdCallsMade++;
+      if (sub.rowsWritten > 0) {
+        stats.fixturesWithH2HFound++;
+        stats.h2hRowsWritten += sub.rowsWritten;
+      } else {
+        stats.fixturesWithNoH2H++;
       }
     }
   }
