@@ -260,7 +260,9 @@ export async function syncH2HForUpcomingFixtures(daysAhead: number = 7): Promise
           // syncH2HForFixture returns { rowsWritten, skipped: 'fresh'|null, meetingsFound }
           return await syncH2HForFixture(fixtureId, homeTeamId, awayTeamId);
         } catch (err: any) {
-          return { skipped: true as const, reason: 'error' as const, message: err?.message };
+          const msg = err?.message || err?.toString?.() || JSON.stringify(err) || 'no error info';
+          const name = err?.constructor?.name || 'unknown';
+          return { skipped: true as const, reason: 'error' as const, message: `${name}: ${msg}` };
         }
       }),
     );
