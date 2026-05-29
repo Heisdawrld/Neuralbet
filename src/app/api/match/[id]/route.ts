@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTursoClient } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
-import { generateV4Tips } from '@/lib/prediction-engine/v4';
+import { runV5Prediction } from '@/lib/prediction-engine/v5';
+import { adaptV5ToPunterTip } from '@/lib/prediction-engine/v5/adapters/punter-tip';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,21 +131,20 @@ export async function GET(
       args: [eventId],
     });
 
-    // ── Engine Prediction (call v4 for just this event) ────────────────
+    // ── Engine Prediction (V5 engine, adapted to v4 PunterTip shape for frontend compat) ────────
     let enginePrediction = null;
     try {
-      const tips = await generateV4Tips({
-        dateFrom: event.event_date as string,
-        dateTo: event.event_date as string,
+      const v5Result = await runV5Prediction(eventId);
+      enginePrediction = adaptV5ToPunterTip(v5Result, {
         leagueId,
-        limit: 200,
+        leagueName: (league?.name as string) || `League ${leagueId}`,
+        homeTeamId,
+        awayTeamId,
+        eventDate: event.event_date as string,
+        status: event.status as string,
       });
-      const matchTip = tips.find(t => t.eventId === eventId);
-      if (matchTip) {
-        enginePrediction = matchTip;
-      }
     } catch (err) {
-      console.error(`[Match API] Engine prediction failed for event ${eventId}:`, err);
+      console.error(`[Match API] V5 engine prediction failed for event ${eventId}:`, err);
     }
 
     // ── Build Home/Away Team Stats from Standings ──────────────────────
