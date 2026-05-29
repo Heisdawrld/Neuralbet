@@ -20,23 +20,13 @@ import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from './math/poisson';
 import { calibrateProbabilities } from './math/calibration';
+import { estimateExpectedGoals } from './xg';
 
 // ═══════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════
 
-export interface ManagerProfile {
-  name?: string;
-  tactical_styles?: Array<{ code: string; name: string }>;
-  defensive_line?: string;
-  team_style?: string;
-  over_25_pct?: number;
-  btts_pct?: number;
-  avg_goals_scored?: number;
-  avg_goals_conceded?: number;
-  clean_sheet_pct?: number;
-  win_pct?: number;
-}
+export type { ManagerProfile } from './types';
 
 export interface FeatureVector {
   // Team stats
@@ -372,351 +362,24 @@ function classifyMatchScript(fv: FeatureVector): ScriptOutput {
 // XG ESTIMATION — 12 LAYERS
 // ═══════════════════════════════════════════════════════════════════════
 
-const GLOBAL_LEAGUE_AVG = 1.35;
-const HOME_ADV = 1.10;
 
-// L1: League-aware base xG
-function computeBaseXg(fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const LEAGUE_AVG = safeNum(fv.leagueAvgGoalsPerTeam, GLOBAL_LEAGUE_AVG);
-  const homeAdv = fv.isNeutralGround ? 1.0 : HOME_ADV;
-  const hAS = safeNum(fv.homeAvgScored, LEAGUE_AVG);
-  const aAS = safeNum(fv.awayAvgScored, LEAGUE_AVG * 0.9);
-  const hAC = safeNum(fv.homeAvgConceded, LEAGUE_AVG);
-  const aAC = safeNum(fv.awayAvgConceded, LEAGUE_AVG);
-  const hAtk = clamp(hAS / LEAGUE_AVG, 0.3, 2.2);
-  const aAtk = clamp(aAS / LEAGUE_AVG, 0.3, 2.2);
-  const hDef = clamp(hAC / LEAGUE_AVG, 0.3, 1.8);
-  const aDef = clamp(aAC / LEAGUE_AVG, 0.3, 1.8);
-  return { homeXg: hAtk * aDef * LEAGUE_AVG * homeAdv, awayXg: aAtk * hDef * LEAGUE_AVG };
-}
 
-// L2: Thin data regression
-function applyThinDataRegression(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const LEAGUE_AVG = safeNum(fv.leagueAvgGoalsPerTeam, GLOBAL_LEAGUE_AVG);
-  const min = Math.min(safeNum(fv.homeMatchesAvailable, 5), safeNum(fv.awayMatchesAvailable, 5));
-  if (min < 3) return { homeXg: homeXg * 0.5 + LEAGUE_AVG * HOME_ADV * 0.5, awayXg: awayXg * 0.5 + LEAGUE_AVG * 0.5 };
-  if (min < 5) return { homeXg: homeXg * 0.75 + LEAGUE_AVG * HOME_ADV * 0.25, awayXg: awayXg * 0.75 + LEAGUE_AVG * 0.25 };
-  return { homeXg, awayXg };
-}
 
-// L3: Venue anchoring (35% weight)
-function applyVenueAnchoring(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const { homeHomeGoalsFor: hhGF, awayAwayGoalsFor: aaGF, homeHomeGoalsAgainst: hhGA, awayAwayGoalsAgainst: aaGA } = fv;
-  if (hhGF != null && aaGA != null) homeXg = homeXg * 0.65 + (hhGF * 0.6 + aaGA * 0.4) * 0.35;
-  else if (hhGF != null) homeXg = homeXg * 0.75 + hhGF * 0.25;
-  if (aaGF != null && hhGA != null) awayXg = awayXg * 0.65 + (aaGF * 0.6 + hhGA * 0.4) * 0.35;
-  else if (aaGF != null) awayXg = awayXg * 0.75 + aaGF * 0.25;
-  return { homeXg, awayXg };
-}
 
-// L4: Script adjustments (proportional)
-function applyScriptAdjustments(homeXg: number, awayXg: number, script: ScriptOutput, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const LEAGUE_AVG = safeNum(fv.leagueAvgGoalsPerTeam, GLOBAL_LEAGUE_AVG);
-  const p = script.primary || '';
-  if (p === 'open_end_to_end') { homeXg *= 1.12; awayXg *= 1.12; }
-  else if (p === 'tight_low_event') { homeXg *= 0.90; awayXg *= 0.90; }
-  else if (p === 'dominant_home_pressure') { homeXg *= 1.04; awayXg *= 0.96; }
-  else if (p === 'dominant_away_pressure') { awayXg *= 1.04; homeXg *= 0.96; }
-  else if (p === 'chaotic_unreliable') { homeXg = homeXg * 0.9 + LEAGUE_AVG * HOME_ADV * 0.1; awayXg = awayXg * 0.9 + LEAGUE_AVG * 0.1; }
 
-  if (fv.homePredictedStrength && fv.homePredictedStrength < 1.0) homeXg *= fv.homePredictedStrength;
-  if (fv.awayPredictedStrength && fv.awayPredictedStrength < 1.0) awayXg *= fv.awayPredictedStrength;
-  return { homeXg, awayXg };
-}
 
-// L5: Form-derived xG boosts
-function applyFormBoosts(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const { homeXgBoost, awayXgBoost } = computeFormDerivedBoosts(fv);
-  return { homeXg: homeXg * (1 + homeXgBoost), awayXg: awayXg * (1 + awayXgBoost) };
-}
 
-function computeFormDerivedBoosts(fv: FeatureVector): { homeXgBoost: number; awayXgBoost: number } {
-  const GLOBAL_AVG_SCORED = 1.25;
-  const GLOBAL_BTTS = 0.46;
-  const GLOBAL_CS = 0.28;
-  const GLOBAL_SCORE_OK = 0.70;
 
-  const LAG = safeNum(fv.leagueAvgGoalsPerTeam, GLOBAL_AVG_SCORED);
-  const L_BTTS = safeNum(fv.leagueBttsRate, GLOBAL_BTTS);
-  const L_CS = safeNum(fv.leagueCleanSheetRate, GLOBAL_CS);
-  const L_SCORE_OK = safeNum(fv.leagueScoreSuccessRate, GLOBAL_SCORE_OK);
 
-  const homeQScale = fv.homeMatchesAvailable >= 3 ? (fv.dataCompletenessScore >= 0.55 ? 1.0 : fv.dataCompletenessScore >= 0.35 ? 0.7 : 0.4) * (fv.homeMatchesAvailable < 5 ? 0.65 : 1) : 0;
-  const awayQScale = fv.awayMatchesAvailable >= 3 ? (fv.dataCompletenessScore >= 0.55 ? 1.0 : fv.dataCompletenessScore >= 0.35 ? 0.7 : 0.4) * (fv.awayMatchesAvailable < 5 ? 0.65 : 1) : 0;
 
-  const boostContrib = (value: number | undefined, baseline: number, scale: number, maxEffect: number) => {
-    if (value == null || baseline === 0) return 0;
-    return clamp((value - baseline) / baseline * scale, -maxEffect, maxEffect);
-  };
 
-  const homeGoalsScoredBoost = boostContrib(fv.homeAvgScored, LAG, 0.35, 0.12);
-  const homeScoreSuccessRate = fv.homeFailedToScoreRate != null ? 1 - fv.homeFailedToScoreRate : undefined;
-  const homeConsistencyBoost = boostContrib(homeScoreSuccessRate, L_SCORE_OK, 0.28, 0.08);
-  const homeBttsSignal = boostContrib(fv.homeProfileBttsRate ?? fv.homeBttsRate, L_BTTS, 0.22, 0.07);
-  const homeLuckDiff = fv.homeAvgXgFor != null && fv.homeAvgScored != null ? fv.homeAvgScored - fv.homeAvgXgFor : 0;
-  const homeLuckRegression = boostContrib(homeLuckDiff, 1.0, -0.40, 0.10);
-  const homeLineupPenalty = fv.homeAttackers != null && fv.homeAttackers < 2 ? -0.05 : 0;
 
-  let homeAttackBoost = homeQScale > 0 ? clamp(homeGoalsScoredBoost + homeConsistencyBoost + homeBttsSignal + homeLuckRegression, -0.20, 0.20) * homeQScale : 0;
 
-  const awayGoalsScoredBoost = boostContrib(fv.awayAvgScored, LAG, 0.35, 0.12);
-  const awayScoreSuccessRate = fv.awayFailedToScoreRate != null ? 1 - fv.awayFailedToScoreRate : undefined;
-  const awayConsistencyBoost = boostContrib(awayScoreSuccessRate, L_SCORE_OK, 0.28, 0.08);
-  const awayBttsSignal = boostContrib(fv.awayProfileBttsRate ?? fv.awayBttsRate, L_BTTS, 0.22, 0.07);
-  const awayLuckDiff = fv.awayAvgXgFor != null && fv.awayAvgScored != null ? fv.awayAvgScored - fv.awayAvgXgFor : 0;
-  const awayLuckRegression = boostContrib(awayLuckDiff, 1.0, -0.40, 0.10);
-  const awayLineupPenalty = fv.awayAttackers != null && fv.awayAttackers < 2 ? -0.05 : 0;
 
-  let awayAttackBoost = awayQScale > 0 ? clamp(awayGoalsScoredBoost + awayConsistencyBoost + awayBttsSignal + awayLuckRegression, -0.20, 0.20) * awayQScale : 0;
-
-  const homeDefLeaky = homeQScale > 0 ? clamp(boostContrib(fv.homeAvgConceded, LAG, 0.30, 0.10) + boostContrib(fv.homeProfileCleanSheetRate, L_CS, -0.25, 0.07), -0.15, 0.15) * homeQScale : 0;
-  const awayDefLeaky = awayQScale > 0 ? clamp(boostContrib(fv.awayAvgConceded, LAG, 0.30, 0.10) + boostContrib(fv.awayProfileCleanSheetRate, L_CS, -0.25, 0.07), -0.15, 0.15) * awayQScale : 0;
-
-  const homeXgBoost = clamp(homeAttackBoost + awayDefLeaky + homeLineupPenalty, -0.20, 0.20);
-  const awayXgBoost = clamp(awayAttackBoost + homeDefLeaky + awayLineupPenalty, -0.20, 0.20);
-  return { homeXgBoost, awayXgBoost };
-}
-
-// L6: Odds anchor (65% model / 35% bookmaker)
-function applyOddsAnchor(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const impl = fv.impliedOver25 != null ? safeNum(fv.impliedOver25) : null;
-  if (impl == null) return { homeXg, awayXg };
-  if (impl <= 0.05 || impl >= 0.95) return { homeXg, awayXg };
-  const implTotal = Math.max(1.2, -2.1 * Math.log(Math.max(0.01, 1 - impl)));
-  const engTotal = homeXg + awayXg;
-  const blended = engTotal * 0.65 + implTotal * 0.35;
-  const scale = clamp(blended / Math.max(0.5, engTotal), 0.78, 1.25);
-  return { homeXg: homeXg * scale, awayXg: awayXg * scale };
-}
-
-// L7: H2H blend (15-28% weight based on sample)
-function applyH2HBlend(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const h2hAvg = safeNum(fv.h2hAvgGoals, 0);
-  const h2hCount = safeNum(fv.h2hMatchesAvailable, 0);
-  if (h2hAvg <= 0 || h2hCount < 3) return { homeXg, awayXg };
-
-  let h2hWeight: number;
-  if (h2hCount >= 7) h2hWeight = 0.28;
-  else if (h2hCount >= 5) h2hWeight = 0.22;
-  else h2hWeight = 0.15;
-
-  const currentTotal = homeXg + awayXg;
-  const blendedTotal = currentTotal * (1 - h2hWeight) + h2hAvg * h2hWeight;
-  const homeShare = currentTotal > 0 ? homeXg / currentTotal : 0.55;
-  return { homeXg: blendedTotal * homeShare, awayXg: blendedTotal * (1 - homeShare) };
-}
-
-// L8: League goal rate adjustment
-function applyLeagueGoalRateAdjustment(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  const leagueOver35Rate = safeNum(fv.leagueOver35Rate, 0.30);
-  const leagueOver25Rate = safeNum(fv.leagueOver25Rate, 0.50);
-  const over35Deviation = leagueOver35Rate - 0.30;
-  const over25Deviation = leagueOver25Rate - 0.50;
-  const totalDeviation = (over35Deviation * 0.65) + (over25Deviation * 0.35);
-  const multiplier = 1 + clamp(totalDeviation * 0.30, -0.06, 0.06);
-  return { homeXg: homeXg * multiplier, awayXg: awayXg * multiplier };
-}
-
-// L9: Advanced tactical AI (Polymarket, manager styles)
-function applyAdvancedTacticalAI(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  let hXg = homeXg, aXg = awayXg;
-
-  // Polymarket anchor
-  if (fv.polymarketOdds?.odds?.over_under) {
-    const polyOver25 = safeNum(fv.polymarketOdds.odds.over_under.over_25, 0);
-    if (polyOver25 > 0.05 && polyOver25 < 0.95) {
-      const sharpTotalXg = Math.max(1.2, -2.1 * Math.log(Math.max(0.01, 1 - polyOver25)));
-      const currentTotal = hXg + aXg;
-      const blendedTotal = currentTotal * 0.72 + sharpTotalXg * 0.28;
-      const scale = clamp(Math.max(0.5, blendedTotal) / Math.max(0.5, currentTotal), 0.82, 1.18);
-      hXg *= scale;
-      aXg *= scale;
-    }
-  }
-
-  // Manager tactical styles
-  const applyTactics = (manager: ManagerProfile | undefined): number => {
-    if (!manager) return 1.0;
-    let mult = 1.0;
-    const styles = Array.isArray(manager.tactical_styles)
-      ? manager.tactical_styles.map(s => s.code || s.name).join(' ').toLowerCase()
-      : String(manager.tactical_styles || '').toLowerCase();
-    const isConservative = styles.includes('terrorist') || styles.includes('anti-football') || styles.includes('park the bus') || styles.includes('low block') || styles.includes('conservative');
-    const isAttacking = styles.includes('positional') || styles.includes('gegenpressing') || styles.includes('attacking');
-    if (isConservative) mult *= 0.85;
-    else if (isAttacking) mult *= 1.05;
-    return mult;
-  };
-
-  hXg *= applyTactics(fv.homeManager);
-  aXg *= applyTactics(fv.awayManager);
-
-  // Counter vs high line
-  if (fv.homeManager?.defensive_line === 'high' && (fv.awayManager?.team_style === 'direct' || fv.awayManager?.team_style === 'counter')) aXg *= 1.10;
-  if (fv.awayManager?.defensive_line === 'high' && (fv.homeManager?.team_style === 'direct' || fv.homeManager?.team_style === 'counter')) hXg *= 1.10;
-
-  return { homeXg: hXg, awayXg: aXg };
-}
-
-// L10: BSD intelligence adjustments (xG table, manager bias, player impact)
-function applyBsdIntelligenceAdjustments(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  let h = homeXg, a = awayXg;
-  const weight = clamp(safeNum(fv.dataCompletenessScore, 0.5), 0.35, 0.85);
-
-  if (fv.hasXgTable) {
-    const hFor = safeNum(fv.homeXgForPerGame, 0);
-    const hAgainst = safeNum(fv.homeXgAgainstPerGame, 0);
-    const aFor = safeNum(fv.awayXgForPerGame, 0);
-    const aAgainst = safeNum(fv.awayXgAgainstPerGame, 0);
-    if (hFor > 0 && aAgainst > 0) {
-      const tableHome = clamp(hFor * 0.62 + aAgainst * 0.38, 0.45, 2.7);
-      h = h * (1 - 0.18 * weight) + tableHome * (0.18 * weight);
-    }
-    if (aFor > 0 && hAgainst > 0) {
-      const tableAway = clamp(aFor * 0.62 + hAgainst * 0.38, 0.35, 2.5);
-      a = a * (1 - 0.18 * weight) + tableAway * (0.18 * weight);
-    }
-    const gap = clamp(safeNum(fv.xgTableGap, 0) / 20, -0.06, 0.06);
-    if (Math.abs(gap) >= 0.015) { h *= (1 + gap); a *= (1 - gap); }
-  }
-
-  if (fv.hasManagerIntel) {
-    const overBias = clamp(safeNum(fv.combinedManagerOverBias, 0), 0, 1);
-    const underBias = clamp(safeNum(fv.combinedManagerUnderBias, 0), 0, 1);
-    const totalBias = clamp((overBias - underBias) * 0.08, -0.05, 0.06);
-    if (Math.abs(totalBias) >= 0.012) { h *= (1 + totalBias); a *= (1 + totalBias); }
-    const attackGap = clamp(safeNum(fv.managerAttackGap, 0) * 0.05, -0.04, 0.04);
-    if (Math.abs(attackGap) >= 0.012) { h *= (1 + attackGap); a *= (1 - attackGap); }
-  }
-
-  if (fv.hasPlayerStats && safeNum(fv.playerStatsCount, 0) >= 8) {
-    const impactGap = clamp(safeNum(fv.playerImpactGap, 0) / 8, -0.05, 0.05);
-    if (Math.abs(impactGap) >= 0.01) { h *= (1 + impactGap); a *= (1 - impactGap); }
-    const hRating = safeNum(fv.homeAvgPlayerRating, 0);
-    const aRating = safeNum(fv.awayAvgPlayerRating, 0);
-    if (hRating > 0 && aRating > 0) {
-      const ratingGap = clamp((hRating - aRating) / 20, -0.035, 0.035);
-      if (Math.abs(ratingGap) >= 0.01) { h *= (1 + ratingGap); a *= (1 - ratingGap); }
-    }
-  }
-
-  return { homeXg: h, awayXg: a };
-}
-
-// L11: Deep BSD signals (core player gap, referee chaos, metadata)
-function applyDeepBsdSignals(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  let h = homeXg, a = awayXg;
-
-  if (fv.hasDeepPlayerIntel) {
-    const gap = clamp(safeNum(fv.corePlayerGap, 0) / 18, -0.035, 0.035);
-    if (Math.abs(gap) >= 0.008) { h *= (1 + gap); a *= (1 - gap); }
-    const hRating = safeNum(fv.homeCoreAvgRating, 0);
-    const aRating = safeNum(fv.awayCoreAvgRating, 0);
-    if (hRating > 0 && aRating > 0) {
-      const ratingGap = clamp((hRating - aRating) / 35, -0.025, 0.025);
-      if (Math.abs(ratingGap) >= 0.008) { h *= (1 + ratingGap); a *= (1 - ratingGap); }
-    }
-  }
-
-  const chaos = safeNum(fv.refereeVolatilityChaos, 0);
-  if (chaos >= 0.72) { h *= 0.985; a *= 0.985; }
-  if (fv.refereeRedCardWarning) { h *= 0.99; a *= 0.99; }
-
-  const metadataCodes = Array.isArray(fv.metadataReasonCodes) ? fv.metadataReasonCodes : [];
-  if (metadataCodes.includes('metadata_goals_trend')) { h *= 1.015; a *= 1.015; }
-  if (metadataCodes.includes('metadata_scoring_warning')) { h *= 0.99; a *= 0.99; }
-  if (metadataCodes.includes('metadata_derby_context')) { h *= 0.99; a *= 0.99; }
-
-  return { homeXg: h, awayXg: a };
-}
-
-// L11.5: Context adjustments (derby, travel, weather, referee)
-function applyBsdContextAdjustments(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  let h = homeXg, a = awayXg;
-  if (fv.isLocalDerby) { h *= 0.97; a *= 0.97; }
-  if (fv.travelDistanceKm && fv.travelDistanceKm >= 800) {
-    const awayTravelDampener = fv.travelDistanceKm >= 2000 ? 0.94 : 0.97;
-    a *= awayTravelDampener;
-  }
-  if (fv.hasBadWeather || fv.hasBadPitch) { h *= 0.95; a *= 0.95; }
-  if (safeNum(fv.refereeStrictness, 0) >= 0.75) { h *= 0.98; a *= 0.98; }
-  return { homeXg: h, awayXg: a };
-}
-
-// L12: Squad management (rotation, fatigue, rest, cup distraction)
-function applySquadManagementAdjustments(homeXg: number, awayXg: number, fv: FeatureVector): { homeXg: number; awayXg: number } {
-  let h = homeXg, a = awayXg;
-
-  const homeRotationDampener = 1 - clamp(safeNum(fv.rotationRiskHome, 0) * 0.20, 0, 0.18);
-  const awayRotationDampener = 1 - clamp(safeNum(fv.rotationRiskAway, 0) * 0.20, 0, 0.18);
-  if (safeNum(fv.rotationRiskHome, 0) > 0.1) h *= homeRotationDampener;
-  if (safeNum(fv.rotationRiskAway, 0) > 0.1) a *= awayRotationDampener;
-
-  if (fv.homeAlreadySecure) h *= 0.82;
-  if (fv.awayAlreadySecure) a *= 0.82;
-
-  if (safeNum(fv.homeFatigue, 0) > 0.05) h *= (1 - fv.homeFatigue!);
-  if (safeNum(fv.awayFatigue, 0) > 0.05) a *= (1 - fv.awayFatigue!);
-
-  const restDiff = safeNum(fv.restDiffDays, 0);
-  if (restDiff >= 3) a *= 0.95;
-  else if (restDiff >= 2) a *= 0.97;
-  if (restDiff <= -3) h *= 0.95;
-  else if (restDiff <= -2) h *= 0.97;
-
-  if (safeNum(fv.cupDistractionHome, 0) > 0.1) h *= (1 - fv.cupDistractionHome! * 0.15);
-  if (safeNum(fv.cupDistractionAway, 0) > 0.1) a *= (1 - fv.cupDistractionAway! * 0.15);
-
-  if (fv.seasonStage === 'early') { h *= 0.98; a *= 0.98; }
-  return { homeXg: h, awayXg: a };
-}
 
 // xG capping — league-dependent
-function capXg(homeXg: number, awayXg: number, baseHome: number, baseAway: number, fv: FeatureVector) {
-  const leagueOver35 = safeNum(fv.leagueOver35Rate, 0.30);
-  let perTeamCap: number, totalCap: number;
-  if (leagueOver35 > 0.35) { perTeamCap = 3.5; totalCap = 7.0; }
-  else if (leagueOver35 >= 0.25) { perTeamCap = 3.0; totalCap = 6.0; }
-  else { perTeamCap = 2.5; totalCap = 5.0; }
-
-  const capPair = (h: number, a: number) => {
-    h = clamp(h, 0.2, perTeamCap);
-    a = clamp(a, 0.2, perTeamCap);
-    const t = h + a;
-    if (t > totalCap) { const s = totalCap / t; h *= s; a *= s; }
-    if (t < 0.8) { const s = 0.8 / t; h *= s; a *= s; }
-    return { h, a };
-  };
-
-  const fh = capPair(homeXg, awayXg);
-  const bh = capPair(baseHome, baseAway);
-  return {
-    homeExpectedGoals: parseFloat(fh.h.toFixed(3)),
-    awayExpectedGoals: parseFloat(fh.a.toFixed(3)),
-    totalExpectedGoals: parseFloat((fh.h + fh.a).toFixed(3)),
-    baseHomeXg: parseFloat(bh.h.toFixed(3)),
-    baseAwayXg: parseFloat(bh.a.toFixed(3)),
-  };
-}
 
 // Main xG estimator — runs all 12 layers
-function estimateExpectedGoals(fv: FeatureVector, script: ScriptOutput) {
-  let { homeXg, awayXg } = computeBaseXg(fv);
-  ({ homeXg, awayXg } = applyThinDataRegression(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyVenueAnchoring(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyScriptAdjustments(homeXg, awayXg, script, fv));
-  const baseHomeXg = homeXg, baseAwayXg = awayXg;
-  ({ homeXg, awayXg } = applyFormBoosts(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyOddsAnchor(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyH2HBlend(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyLeagueGoalRateAdjustment(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyAdvancedTacticalAI(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyBsdIntelligenceAdjustments(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyDeepBsdSignals(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applyBsdContextAdjustments(homeXg, awayXg, fv));
-  ({ homeXg, awayXg } = applySquadManagementAdjustments(homeXg, awayXg, fv));
-  return capXg(homeXg, awayXg, baseHomeXg, baseAwayXg, fv);
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // CALIBRATION — extracted to ./math/calibration.ts (covered by unit tests)

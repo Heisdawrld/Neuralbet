@@ -209,3 +209,23 @@ export interface ScriptOutput {
   volatilityScore: number;     // 0-1: how unreliable the call is
   _scores?: Record<string, number>;
 }
+
+
+// ── Manager tactical profile (used by xG layer 9 + market scoring) ───
+//
+// Subset of fields from BSD's manager endpoint that the engine consumes.
+// Defensive about missing fields — the engine MUST work even when only
+// `name` is present.
+
+export interface ManagerProfile {
+  name?: string;
+  tactical_styles?: Array<{ code: string; name: string }>;
+  defensive_line?: string;
+  team_style?: string;
+  over_25_pct?: number;
+  btts_pct?: number;
+  avg_goals_scored?: number;
+  avg_goals_conceded?: number;
+  clean_sheet_pct?: number;
+  win_pct?: number;
+}
