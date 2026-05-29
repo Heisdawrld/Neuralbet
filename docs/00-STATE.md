@@ -2,112 +2,115 @@
 
 > Single source of truth across sessions. Updated end of every working session.
 
-## Current Snapshot — 2026-05-29 (Phase 2.1 LIVE — first football-intelligence module)
+## Current Snapshot — 2026-05-29 (Phase 2.3 LIVE — second intelligence module + ablation infra)
 
-**Status**: V5 only engine. Derby intelligence module wired + live. 14 commits on `main` since Phase 0.
+**Status**: V5 only engine. Two intelligence modules live (derby + manager debut). Backtest ablation infrastructure ready. 17 commits on `main` since Phase 0.
 **Live URL**: https://neuralbet-lovat.vercel.app
-**Tests**: **335 passing in 3.01s**
+**Tests**: **366 passing in 4.12s**
 **Engine canon**: `src/lib/prediction-engine/v5/`
-**Backtest harness**: `npm run backtest` (deferred Brier-improvement proof until enough cached data)
+**Ablation CLI**: `npm run ablate -- --module=derby --days=90 --require-derby`
 
-## Live commits on `main` (most recent 6)
+## Live commits on `main` (most recent)
 
 | SHA | Title |
 |---|---|
-| `e26765d` | **Phase 2.1.1**: Fix lossy cache in /api/v5/predict (BUG #5 caught in prod) |
-| `f79b4b4` | **Phase 2.1**: Derby intelligence — intensity-aware xG/volatility/BTTS |
-| `12a6fcb` | **Phase 1.8**: Delete legacy engines (v1, v3, v4) + 14 tests for value-bet adapter |
-| `387a70a` | docs |
-| `8e701d5` | **Phase 1.7**: Backtest harness (Brier/log-loss/hit-rate/ROI/calibration) |
-| `91107c5` | **Phase 1.6**: Migrate /api/match/[id] + /api/v4/predictions from V4 → V5 |
+| `419738c` | **Phase 2.3**: Manager debut bonus (intensity-scaled +10%→0% over 4 matches) |
+| `49a79e5` | **Phase 2.2**: Intelligence flags + backtest ablation infrastructure |
+| `8cdb2d9` | docs |
+| `e26765d` | **Phase 2.1.1**: Fix lossy cache in /api/v5/predict (5th silent bug) |
+| `f79b4b4` | **Phase 2.1**: Derby intelligence (intensity-aware xG/volatility/BTTS) |
+| `12a6fcb` | **Phase 1.8**: Delete legacy engines (v1/v3/v4) + value-bet adapter |
 
-## Cumulative impact since start
+## Two intelligence modules now live
 
-| Metric | Pre Phase 1 | Now |
-|---|---|---|
-| `v5/index.ts` LOC | 1,983 | 798 |
-| Engines wired | v1 + v3 + v4 + v5 | **V5 only** |
-| `prediction-engine/` total LOC | 13,654 | ~6,000 |
-| API routes | 14 | 10 |
-| **Tests** | 0 | **335** |
-| Test runtime | n/a | 3.01s |
-| **Silent bugs caught + fixed** | — | **5** |
-| Live fixture-9456 xG | n/a | 1.35 / 1.16 |
+### 2.1 — Derby
+- Intensity-aware xG dampener (replaces flat -3% with -8% baseline scaled up to -13.5% for fierce derbies)
+- Volatility boost → engine more humble on derbies → more abstains
+- BTTS slight tilt UP (matches research)
+- Intensity scales with H2H meeting count + chaos signal + venue proximity
 
-## Phase 2.1 — first real intelligence module
+### 2.3 — Manager debut
+- Pulled from `manager_career.date_from` + `manager_career.matches`
+- First 3 home games: +10% → +7% → +5% → +3% to homeWin
+- Draw dampened proportionally (the lift comes mostly from converted draws)
+- 60-day appointment-window guard
+- Probability-preserving — re-normalises 1X2 to exactly 1.0
 
-**Module**: `src/lib/prediction-engine/v5/intelligence/derby.ts` (256 LOC + 21 tests)
+## Backtest ablation infrastructure (Phase 2.2)
 
-**What it does** (numerical impact on Premier League derby with intensity ≈ 0.85):
-- xG dampened **~12%** (was a flat -3%)
-- matchChaosScore raised by **+0.10** (engine more humble → more abstains)
-- bttsYes tilted up **+2.5%** (matches research data)
+**Mechanism**: every intelligence module has a per-module flag (`derby`, `manager_debut`, `rest_day`, `late_season`, `weather_style`). Default state: all ON.
 
-**Intensity scales** with:
-- `h2hMatchesAvailable` (40% weight, saturates at 10)
-- `matchChaosScore` (30% weight)
-- proximity from `travelDistanceKm` (30% weight)
+**Tools**:
+- `withIntelligenceFlags({derby: false}, async () => runBacktest(...))` — scoped flag override with try/finally restore
+- `ablateModule({module: 'derby', baseOptions: {days: 90, requireDerby: true}})` — runs backtest twice (ON then OFF), diffs Brier per market, classifies verdict as IMPROVES / REGRESSES / NEUTRAL
+- `npm run ablate -- --module=derby --days=90 --require-derby` — CLI gate that exits non-zero on REGRESSES
 
-**Honest caveat (per the 10× rule)**: ships behind no flag — backtest-proof of Brier improvement is deferred until enough finished derby fixtures are cached in `predictions_v2`. Phase 2.2 will add derby-flag filtering to the backtest runner so we can ablate this module specifically and confirm/revert.
+**Backtest runner** extended with `requireDerby`, `leagueId`, `label` filters.
 
-## The 5 silent production bugs the testing/observability work has caught and fixed
+## The 5 silent production bugs caught + fixed (cumulative)
 
-| # | Bug | Phase | How detected |
+| # | Bug | Severity | Phase |
 |---|---|---|---|
-| 1 | Script nudges to complement pairs silently overwritten | 1.2 | Unit test on calibration |
-| 2 | `over15` cap could be undone by monotonicity raise | 1.2 | Unit test on calibration |
-| 3 | Sanity dampener could violate monotonicity | 1.2 | Unit test on calibration |
-| 4 | NaN propagation in form-boosts | 1.3 | Integration test on xG orchestrator |
-| 5 | Lossy cache reconstruction in `/api/v5/predict` | 2.1.1 | Production smoke test after Phase 2.1 |
+| 1 | Script nudges to complement pairs silently overwritten | High | 1.2 |
+| 2 | `over15` cap could be undone by monotonicity raise | Medium | 1.2 |
+| 3 | Sanity dampener could violate monotonicity | Medium | 1.2 |
+| 4 | NaN propagation in form-boosts | High | 1.3 |
+| 5 | Lossy cache reconstruction in `/api/v5/predict` | High | 2.1.1 |
 
-## Engine file map (post Phase 2.1.1)
+## Engine file map (post Phase 2.3)
 
 ```
 src/lib/prediction-engine/v5/
-├── index.ts                ← orchestrator (798 LOC)
-├── types.ts                ← FeatureVector + ScriptOutput + MarketCandidate + ManagerProfile
-├── feature-builder.ts
-├── math/                   ← Poisson + calibration (+ 56 tests)
-├── xg/                     ← 14-layer xG pipeline (+ 53 tests)
-├── script/                 ← script classifier (+ 42 tests)
-├── markets/                ← decision layer (+ 72 tests)
-├── adapters/               ← V5 → PunterTipV4 + ValueBet (+ 45 tests)
-├── backtest/               ← Brier/log-loss/hit-rate/ROI/calibration (+ 42 tests)
+├── index.ts                    ← orchestrator (~800 LOC)
+├── types.ts                    ← FeatureVector now has 4 new debut fields
+├── feature-builder.ts          ← reads manager_career for tenure data
+├── math/poisson + calibration  (+ 56 tests)
+├── xg/ 14 layers               (+ 53 tests)
+├── script/ 5 categories        (+ 42 tests)
+├── markets/ 7 decision modules (+ 72 tests)
+├── adapters/ punter + value    (+ 45 tests)
+├── backtest/
+│   ├── scorers.ts              ← Brier / log-loss / hit-rate / ROI / calibration
+│   ├── outcomes.ts             ← score → market outcome map
+│   ├── runner.ts               ← runBacktest (now with fixture-flag filters)
+│   └── compare.ts              ← ablateModule + formatComparison
+│   (+ 47 tests)
 └── intelligence/
-    ├── derby.ts            ← intensity-aware derby refinement (+ 21 tests)
-    └── __tests__/
+    ├── flags.ts                ← per-module kill switches
+    ├── derby.ts                ← intensity-aware (Phase 2.1)
+    ├── manager-debut.ts        ← debut bonus + tenure decay (Phase 2.3)
+    └── __tests__/              ← 47 tests across 3 suites
 ```
 
-## Phase 2 queue (each gated by backtest Brier improvement)
+## Phase 2 queue
 
-| Module | Hypothesis |
-|---|---|
-| 2.2 — Backtest runner: derby-flag ablation + first real backtest report | (infra for the gate) |
-| 2.3 — Manager debut bonus | New manager → +10% home win rate first 3 games |
-| 2.4 — Rest-day asymmetry | 4+ day advantage → +0.15 xG to advantaged side |
-| 2.5 — Late-season motivation | Qualified teams rotate; relegation strugglers overperform xG |
-| 2.6 — Weather × playing style | Wet pitch dampens possession teams more than direct |
-| 2.7 — Set-piece specialist boost | Elite dead-ball striker + strict ref → +0.2 xG |
-| 2.8 — Lineup confidence decay | Predicted lineup less reliable far from kickoff |
+| Phase | Module | Hypothesis |
+|---|---|---|
+| **2.4** | Rest-day asymmetry | 4+ day rest advantage → +0.15 xG |
+| 2.5 | Late-season motivation | Qualified teams rotate; relegation strugglers overperform xG |
+| 2.6 | Weather × playing style | Wet pitch dampens possession teams more |
+| 2.7 | Set-piece specialist boost | Elite dead-ball striker + strict ref → +0.2 xG |
+| 2.8 | Lineup confidence decay | Predicted lineup less reliable far from kickoff |
 
 ## Architectural rules locked in
 
-1. Magic numbers are forbidden — every coefficient is a named, commented constant
-2. Property-based fuzz is mandatory for numeric → probability functions
+1. Magic numbers are forbidden — named constants only
+2. Property-based fuzz mandatory for numeric → probability functions
 3. Pipeline order matters — document it, test it
-4. NaN guard at every fv access — `??` is not enough; use `safeNum()`
-5. Refactor invariant: bit-for-bit output match — proven by production smoke test
-6. **Phase 2+ modules require a measurable Brier improvement on the backtest** — no module merges without it
+4. NaN guard at every fv access — `safeNum()`, never `??`
+5. Refactor invariant: bit-for-bit output match — production smoke test on every push
+6. **Phase 2+ modules require measurable Brier improvement on the backtest** — gate via `npm run ablate`
 
 ## Session log
 
 | Date | Session focus | Outcome |
 |---|---|---|
 | 2026-05-29 #1 | Phase 0 — Consolidation | 68% disk reduction |
-| 2026-05-29 #2-5 | Phase 1.1-1.3 — math + xg modules + tests + 4 silent bugs | 109 tests, fully tested foundation |
+| 2026-05-29 #2-5 | Phase 1.1-1.3 — math + xg + tests | 109 tests, 4 silent bugs |
 | 2026-05-29 #6 | Phase 1.4 — Script classifier | 151 tests |
 | 2026-05-29 #7 | Phase 1.5 — Market decision layer | 223 tests |
-| 2026-05-29 #8 | Phase 1.6 — V4 → V5 migration | 254 tests, match panel on V5 |
-| 2026-05-29 #9 | Phase 1.7 — Backtest harness | 300 tests, Phase 2 unblocked |
-| 2026-05-29 #10 | Phase 1.8 — Delete legacy engines (-8,287 LOC) | 314 tests |
-| 2026-05-29 #11 | Phase 2.1 — Derby intelligence + Phase 2.1.1 cache bug fix (#5) | **335 tests**, first intelligence module live |
+| 2026-05-29 #8 | Phase 1.6 — V4 → V5 migration | 254 tests |
+| 2026-05-29 #9 | Phase 1.7 — Backtest harness | 300 tests |
+| 2026-05-29 #10 | Phase 1.8 — Delete legacy (-8,287 LOC) | 314 tests |
+| 2026-05-29 #11 | Phase 2.1 + 2.1.1 — Derby + 5th silent bug fix | 335 tests, 1st intelligence module |
+| 2026-05-29 #12 | Phase 2.2 + 2.3 — Ablation infra + manager debut | **366 tests**, 2nd intelligence module live |
