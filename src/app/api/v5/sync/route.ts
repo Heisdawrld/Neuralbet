@@ -76,21 +76,16 @@ async function getFinishedEventIds(): Promise<number[]> {
 async function runStep1() {
   const results: Record<string, any> = { step: 1, errors: [] };
 
-  try { results.events = await syncEvents('notstarted', 200); }
+  try { results.events = await syncEvents('notstarted', 100); }
   catch (e: any) { results.errors.push(`Events: ${e.message}`); }
 
-  try { results.finishedEvents = await syncFinishedEvents(7); }
+  try { results.finishedEvents = await syncFinishedEvents(3); }
   catch (e: any) { results.errors.push(`Finished: ${e.message}`); }
 
   try { results.leagues = await syncLeagues(); }
   catch (e: any) { results.errors.push(`Leagues: ${e.message}`); }
 
-  try {
-    const leagueIds = await getLeagueIds();
-    results.standings = await syncStandings(leagueIds);
-  } catch (e: any) { results.errors.push(`Standings: ${e.message}`); }
-
-  // Clean stale 0-0 scores for upcoming matches (BUG #11 cleanup)
+  // Clean stale 0-0 scores (BUG #11 cleanup)
   try {
     await safeExecute(
       `UPDATE events SET home_score = NULL, away_score = NULL
@@ -105,18 +100,16 @@ async function runStep1() {
 async function runStep2() {
   const results: Record<string, any> = { step: 2, errors: [] };
   const eventIds = await getUpcomingEventIds();
+  const leagueIds = await getLeagueIds();
 
-  try { results.odds = await syncOdds(eventIds); }
+  try { results.standings = await syncStandings(leagueIds.slice(0, 10)); }
+  catch (e: any) { results.errors.push(`Standings: ${e.message}`); }
+
+  try { results.odds = await syncOdds(eventIds.slice(0, 30)); }
   catch (e: any) { results.errors.push(`Odds: ${e.message}`); }
 
-  try { results.lineups = await syncLineups(eventIds); }
+  try { results.lineups = await syncLineups(eventIds.slice(0, 30)); }
   catch (e: any) { results.errors.push(`Lineups: ${e.message}`); }
-
-  try { results.managers = await syncManagers(); }
-  catch (e: any) { results.errors.push(`Managers: ${e.message}`); }
-
-  try { results.referees = await syncReferees(); }
-  catch (e: any) { results.errors.push(`Referees: ${e.message}`); }
 
   return results;
 }
@@ -126,14 +119,17 @@ async function runStep3() {
   const eventIds = await getUpcomingEventIds();
   const finishedIds = await getFinishedEventIds();
 
-  try { results.eventStats = await syncEventStats(finishedIds); }
-  catch (e: any) { results.errors.push(`Stats: ${e.message}`); }
+  try { results.managers = await syncManagers(); }
+  catch (e: any) { results.errors.push(`Managers: ${e.message}`); }
 
-  try { results.polymarket = await syncPolymarket(eventIds); }
+  try { results.referees = await syncReferees(); }
+  catch (e: any) { results.errors.push(`Referees: ${e.message}`); }
+
+  try { results.polymarket = await syncPolymarket(eventIds.slice(0, 20)); }
   catch (e: any) { results.errors.push(`Polymarket: ${e.message}`); }
 
   try {
-    const h2h = await syncH2HForUpcomingFixtures(7);
+    const h2h = await syncH2HForUpcomingFixtures(3);
     results.h2h = h2h.h2hRowsWritten;
   } catch (e: any) { results.errors.push(`H2H: ${e.message}`); }
 
