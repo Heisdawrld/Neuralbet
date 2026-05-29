@@ -176,3 +176,36 @@ export interface PredictionV2Record {
   created_at: string;
   updated_at: string;
 }
+
+// ── Script classification output ─────────────────────────────────────
+//
+// The match-script classifier categorises a fixture into one of several
+// game-state archetypes. Each archetype unlocks a different set of
+// downstream calibration nudges and market preferences.
+//
+// Primaries:
+//   dominant_home_pressure — home heavily favoured to control + score
+//   dominant_away_pressure — away heavily favoured (rare in real football)
+//   open_end_to_end        — both teams attack; goals expectation high
+//   tight_low_event        — both teams defence-first; goals expectation low
+//   chaotic_unreliable     — data quality too low or signals contradict;
+//                            engine is humble and dampens any high prob
+
+export type ScriptPrimary =
+  | 'dominant_home_pressure'
+  | 'dominant_away_pressure'
+  | 'open_end_to_end'
+  | 'tight_low_event'
+  | 'chaotic_unreliable'
+  | string;  // allow forward-compat tags
+
+export interface ScriptOutput {
+  primary: ScriptPrimary;
+  secondary: string | null;
+  confidence: number;          // 0-1: how certain the classifier is
+  homeControlScore: number;    // 0-1
+  awayControlScore: number;    // 0-1
+  eventLevelScore: number;     // 0-1: how "eventful" the match is expected to be
+  volatilityScore: number;     // 0-1: how unreliable the call is
+  _scores?: Record<string, number>;
+}

@@ -19,6 +19,7 @@
 import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from './math/poisson';
+import { calibrateProbabilities } from './math/calibration';
 
 // ═══════════════════════════════════════════════════════════════════════
 // TYPES
@@ -237,16 +238,7 @@ export interface PredictionResult {
   updatedAt: string;
 }
 
-export interface ScriptOutput {
-  primary: string;
-  secondary: string | null;
-  confidence: number;
-  homeControlScore: number;
-  awayControlScore: number;
-  eventLevelScore: number;
-  volatilityScore: number;
-  _scores?: Record<string, number>;
-}
+export type { ScriptOutput } from './types';
 
 // ═══════════════════════════════════════════════════════════════════════
 // UTILITY FUNCTIONS
@@ -727,121 +719,10 @@ function estimateExpectedGoals(fv: FeatureVector, script: ScriptOutput) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// CALIBRATION
+// CALIBRATION — extracted to ./math/calibration.ts (covered by unit tests)
 // ═══════════════════════════════════════════════════════════════════════
+// (calibrateProbabilities is imported at the top of this file)
 
-function calibrateProbabilities(
-  rawProbs: Record<string, number>,
-  script: ScriptOutput,
-  impliedOdds: {
-    impliedHomeProb?: number | null;
-    impliedAwayProb?: number | null;
-    impliedOver25?: number | null;
-    impliedOver15?: number | null;
-    impliedBttsYes?: number | null;
-  } | null
-): Record<string, number> {
-  const cal: Record<string, number> = { ...rawProbs };
-  const primary = script.primary || '';
-
-  const adj = (key: string, delta: number) => {
-    if (cal[key] == null) return;
-    cal[key] = parseFloat(clamp(cal[key] + delta, 0.01, 0.99).toFixed(4));
-  };
-
-  // L1: Bookmaker odds blending
-  if (impliedOdds) {
-    const impHome = impliedOdds.impliedHomeProb;
-    const impAway = impliedOdds.impliedAwayProb;
-    const impOver25 = impliedOdds.impliedOver25;
-    const impOver15 = impliedOdds.impliedOver15;
-    const impBttsYes = impliedOdds.impliedBttsYes;
-
-    // 1X2 blending (55% model / 45% bookmaker)
-    if (impHome != null && impAway != null && cal.homeWin != null && cal.awayWin != null) {
-      const impDraw = Math.max(0.01, 1 - impHome - impAway);
-      const oldHome = cal.homeWin;
-      const oldDraw = cal.draw || (1 - cal.homeWin - cal.awayWin);
-      const oldAway = cal.awayWin;
-      cal.homeWin = parseFloat((oldHome * 0.55 + impHome * 0.45).toFixed(4));
-      cal.draw = parseFloat((oldDraw * 0.55 + impDraw * 0.45).toFixed(4));
-      cal.awayWin = parseFloat((oldAway * 0.55 + impAway * 0.45).toFixed(4));
-    }
-
-    // Over/Under blending (65% model / 35% bookmaker)
-    if (impOver25 != null && cal.over25 != null) {
-      cal.over25 = parseFloat((cal.over25 * 0.65 + impOver25 * 0.35).toFixed(4));
-      cal.under25 = parseFloat((1 - cal.over25).toFixed(4));
-    }
-    if (impOver15 != null && cal.over15 != null) {
-      cal.over15 = parseFloat((cal.over15 * 0.65 + impOver15 * 0.35).toFixed(4));
-      cal.under15 = parseFloat((1 - cal.over15).toFixed(4));
-    }
-
-    // BTTS blending (60% model / 40% bookmaker)
-    if (impBttsYes != null && cal.bttsYes != null) {
-      cal.bttsYes = parseFloat((cal.bttsYes * 0.60 + impBttsYes * 0.40).toFixed(4));
-      cal.bttsNo = parseFloat((1 - cal.bttsYes).toFixed(4));
-    }
-  }
-
-  // L2: Script micro-adjustments
-  if (primary === 'dominant_home_pressure') { adj('homeWin', +0.03); adj('awayWin', -0.02); }
-  else if (primary === 'dominant_away_pressure') { adj('awayWin', +0.03); adj('homeWin', -0.02); }
-  else if (primary === 'open_end_to_end') { adj('bttsYes', +0.04); adj('over25', +0.03); adj('over35', +0.02); }
-  else if (primary === 'tight_low_event') { adj('bttsNo', +0.04); adj('over25', -0.03); adj('over15', -0.02); }
-  else if (primary === 'chaotic_unreliable') {
-    for (const key of Object.keys(cal)) {
-      if (typeof cal[key] === 'number' && cal[key] > 0.70) cal[key] = parseFloat((cal[key] * 0.97).toFixed(4));
-    }
-  }
-
-  // Enforce complements
-  const pairs: [string, string][] = [
-    ['over05', 'under05'], ['over15', 'under15'], ['over25', 'under25'], ['over35', 'under35'],
-    ['bttsYes', 'bttsNo'], ['homeOver05', 'homeUnder05'], ['awayOver05', 'awayUnder05'],
-    ['homeOver15', 'homeUnder15'], ['awayOver15', 'awayUnder15'], ['homeOver25', 'homeUnder25'],
-    ['awayOver25', 'awayUnder25'],
-  ];
-  for (const [overKey, underKey] of pairs) {
-    if (cal[overKey] != null) cal[underKey] = parseFloat((1 - cal[overKey]).toFixed(4));
-  }
-
-  // Over 1.5 confidence dampening
-  if (cal.over15 != null) {
-    if (cal.over15 > 0.90) cal.over15 = 0.90;
-    if (cal.over25 != null && cal.over25 < 0.40) {
-      cal.over15 = parseFloat((cal.over15 * (0.84 + (cal.over25 / 0.40) * 0.10)).toFixed(4));
-    }
-    if (primary === 'tight_low_event' && cal.over15 > 0.72) cal.over15 = parseFloat((cal.over15 * 0.87).toFixed(4));
-    cal.under15 = parseFloat((1 - cal.over15).toFixed(4));
-  }
-
-  // Monotonic ordering: over15 >= over25 >= over35
-  if (cal.over25 != null && cal.over15 != null && cal.over15 < cal.over25) {
-    cal.over15 = cal.over25; cal.under15 = parseFloat((1 - cal.over15).toFixed(4));
-  }
-  if (cal.over35 != null && cal.over25 != null && cal.over25 < cal.over35) {
-    cal.over25 = cal.over35; cal.under25 = parseFloat((1 - cal.over25).toFixed(4));
-  }
-
-  // 1X2 sum ≈ 1.0
-  if (cal.homeWin != null && cal.draw != null && cal.awayWin != null) {
-    const sum = cal.homeWin + cal.draw + cal.awayWin;
-    if (Math.abs(sum - 1.0) > 0.01) {
-      const scale = 1.0 / sum;
-      cal.homeWin = parseFloat(clamp(cal.homeWin * scale, 0.01, 0.99).toFixed(4));
-      cal.draw = parseFloat(clamp(cal.draw * scale, 0.01, 0.99).toFixed(4));
-      cal.awayWin = parseFloat(clamp(cal.awayWin * scale, 0.01, 0.99).toFixed(4));
-    }
-  }
-
-  // Final clamp
-  for (const key of Object.keys(cal)) {
-    if (typeof cal[key] === 'number') cal[key] = parseFloat(clamp(cal[key], 0, 1).toFixed(4));
-  }
-  return cal;
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // MARKET REGISTRY (32 markets)
