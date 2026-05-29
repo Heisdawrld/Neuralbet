@@ -223,6 +223,41 @@ export async function buildFeatureVector(fixtureId: number): Promise<FeatureVect
     }
   }
 
+  // ── 8b. Rest-day signals (intelligence/rest-day.ts) ─────────────────
+  // Find each team's previous finished fixture and compute days-since.
+  // Both rest-days are returned as null when there is no prior fixture
+  // in the DB for that team — the rest-day module fail-safes to no-op
+  // when this is the case.
+  const eventTime = new Date(event.event_date as string).getTime();
+  let homeRestDays: number | null = null;
+  let awayRestDays: number | null = null;
+
+  for (const [teamId, target] of [
+    [Number(event.home_team_id), 'home'] as const,
+    [Number(event.away_team_id), 'away'] as const,
+  ]) {
+    if (!teamId) continue;
+    try {
+      const prevResult = await safeExecute(
+        `SELECT event_date FROM events
+         WHERE status = 'finished'
+           AND (home_team_id = ? OR away_team_id = ?)
+           AND event_date < ?
+         ORDER BY event_date DESC LIMIT 1`,
+        [teamId, teamId, event.event_date as string],
+      );
+      const prev = prevResult.rows?.[0];
+      if (prev?.event_date) {
+        const prevTime = new Date(prev.event_date as string).getTime();
+        if (Number.isFinite(prevTime) && prevTime < eventTime) {
+          const days = Math.floor((eventTime - prevTime) / 86400000);
+          if (target === 'home') homeRestDays = days;
+          else awayRestDays = days;
+        }
+      }
+    } catch { /* silent — rest-day signal degrades to null gracefully */ }
+  }
+
   // ── 9. Load referee ─────────────────────────────────────────────────
   const refereeId = event.referee_id ? Number(event.referee_id) : null;
   let refereeAvgGoals: number | null = null;
@@ -351,6 +386,9 @@ export async function buildFeatureVector(fixtureId: number): Promise<FeatureVect
     homeManagerDaysAtClub,
     awayManagerMatchesAtClub,
     awayManagerDaysAtClub,
+    // Rest-day signals (intelligence/rest-day.ts)
+    homeRestDays,
+    awayRestDays,
 
     // Referee
     refereeAvgGoals,

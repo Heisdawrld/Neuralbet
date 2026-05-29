@@ -88,6 +88,10 @@ export interface FeatureVector {
   awayManagerMatchesAtClub?: number | null;
   awayManagerDaysAtClub?: number | null;
 
+  // Rest-day signals (intelligence/rest-day.ts)
+  homeRestDays?: number | null;
+  awayRestDays?: number | null;
+
   // Referee profile
   refereeAvgGoals: number | null;
   refereeAvgCards: number | null;

@@ -22,6 +22,7 @@ import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from '.
 import { calibrateProbabilities } from './math/calibration';
 import { applyDerbyToVolatility, applyDerbyToProbs } from './intelligence/derby';
 import { applyManagerDebutToProbs } from './intelligence/manager-debut';
+import { applyRestDayToXg } from './intelligence/rest-day';
 import { estimateExpectedGoals } from './xg';
 import { classifyMatchScript } from './script';
 import {
@@ -552,6 +553,12 @@ function runProbabilityPipeline(features: FeatureVector, script: ScriptOutput): 
   rawProbs: Record<string, number>;
 } {
   const xg = estimateExpectedGoals(features, script);
+  // Rest-day asymmetry — penalises the fatigued side's xG (post-Poisson).
+  // Applied here so the score-matrix below sees the corrected xG.
+  const rested = applyRestDayToXg(xg.homeExpectedGoals, xg.awayExpectedGoals, features);
+  xg.homeExpectedGoals = rested.homeXg;
+  xg.awayExpectedGoals = rested.awayXg;
+  xg.totalExpectedGoals = parseFloat((rested.homeXg + rested.awayXg).toFixed(3));
   const sm = buildScoreMatrix(xg.homeExpectedGoals, xg.awayExpectedGoals);
   const rawProbs = deriveMarketProbabilities(sm);
 
