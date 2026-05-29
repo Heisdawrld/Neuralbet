@@ -58,14 +58,14 @@ async function handleSync(request: NextRequest) {
     else if (step === '2') {
       // Standings (top 8 leagues) + odds (top 20 events)
       const leagueIds = await getIds(`SELECT DISTINCT league_id FROM events WHERE status='notstarted' LIMIT 8`);
-      const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 20`);
+      const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 10`);
       try { results.standings = await syncStandings(leagueIds); } catch (e: any) { results.errors.push(e.message); }
       try { results.odds = await syncOdds(eventIds); } catch (e: any) { results.errors.push(e.message); }
     }
 
     else if (step === '3') {
       // Lineups only — managers/referees available via step=5
-      const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 20`);
+      const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 10`);
       try { results.lineups = await syncLineups(eventIds); } catch (e: any) { results.errors.push(e.message); }
     }
 
