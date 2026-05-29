@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
-import { impliedProbability } from '../utils';
+import { impliedProbability } from './utils';
 import type { FeatureVector } from './types';
 
 /**

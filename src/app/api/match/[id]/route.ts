@@ -3,6 +3,7 @@ import { getTursoClient } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { runV5Prediction } from '@/lib/prediction-engine/v5';
 import { adaptV5ToPunterTip } from '@/lib/prediction-engine/v5/adapters/punter-tip';
+import { fetchH2HFromBSD } from '@/lib/bsd-h2h';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,19 +70,56 @@ export async function GET(
     });
 
     // ── H2H Data (last 10 meetings) ────────────────────────────────────
-    const h2hResult = await db.execute({
-      sql: `SELECT home_team_id, away_team_id, home_team, away_team, home_score, away_score, event_date, status
-            FROM events WHERE status = 'finished'
-            AND ((home_team_id = ? AND away_team_id = ?) OR (home_team_id = ? AND away_team_id = ?))
-            AND home_score IS NOT NULL AND away_score IS NOT NULL
-            ORDER BY event_date DESC LIMIT 10`,
-      args: [homeTeamId, awayTeamId, awayTeamId, homeTeamId],
-    });
+    // Prefer the local events table when populated. When the BSD sync's
+    // forward window doesn't include past meetings (typical for newly-
+    // tracked fixtures or international friendlies), fall back to a
+    // direct BSD lookup so the H2H tab isn't empty.
+    let h2hRows: any[] = [];
+    try {
+      const h2hResult = await db.execute({
+        sql: `SELECT home_team_id, away_team_id, home_team, away_team, home_score, away_score, event_date, status
+              FROM events WHERE status = 'finished'
+              AND ((home_team_id = ? AND away_team_id = ?) OR (home_team_id = ? AND away_team_id = ?))
+              AND home_score IS NOT NULL AND away_score IS NOT NULL
+              ORDER BY event_date DESC LIMIT 10`,
+        args: [homeTeamId, awayTeamId, awayTeamId, homeTeamId],
+      });
+      h2hRows = h2hResult.rows || [];
+    } catch (err) {
+      console.warn('[Match API] H2H query failed:', err);
+    }
+
+    if (h2hRows.length === 0) {
+      const bsdH2H = await fetchH2HFromBSD(homeTeamId, awayTeamId);
+      h2hRows = bsdH2H.map((m) => ({
+        home_team_id: m.homeTeamId,
+        away_team_id: m.awayTeamId,
+        home_team: m.homeTeam,
+        away_team: m.awayTeam,
+        home_score: m.homeScore,
+        away_score: m.awayScore,
+        event_date: m.eventDate,
+        status: m.status,
+      }));
+    }
+
+    // Compatibility shim so the existing .rows.map(...) call below still works.
+    const h2hResult = { rows: h2hRows };
 
     // ── Standings for both teams ───────────────────────────────────────
+    // BUG FIX (Phase 2.x): filter by latest season_id to prevent multi-season
+    // duplicate rows (e.g. international qualifier 'leagues' that span many
+    // editions/groups would otherwise return 469 rows with massive
+    // team-name duplication).
     const standingsResult = await db.execute({
-      sql: `SELECT * FROM standings WHERE league_id = ? ORDER BY position ASC`,
-      args: [leagueId],
+      sql: `SELECT s.* FROM standings s
+            WHERE s.league_id = ?
+              AND s.season_id = (
+                SELECT MAX(season_id) FROM standings
+                WHERE league_id = ? AND season_id IS NOT NULL
+              )
+            ORDER BY s.position ASC`,
+      args: [leagueId, leagueId],
     });
 
     // ── Managers ───────────────────────────────────────────────────────
