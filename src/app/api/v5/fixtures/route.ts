@@ -190,6 +190,32 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // ── Fix league names: lookup from BSD if still showing 'League {id}' ──
+    const leagueIdsToFix = new Set<number>();
+    for (const f of fixtures) {
+      if (f.leagueName.startsWith('League ') && /^League \d+$/.test(f.leagueName)) {
+        leagueIdsToFix.add(f.leagueId);
+      }
+    }
+    if (leagueIdsToFix.size > 0) {
+      for (const lid of leagueIdsToFix) {
+        try {
+          const bsdLeague = await bsdClient.fetchWithRetryPublic<any>(`leagues/${lid}/`);
+          if (bsdLeague?.name) {
+            // Update all fixtures with this league
+            for (const f of fixtures) {
+              if (f.leagueId === lid) f.leagueName = bsdLeague.name;
+            }
+            // Store in DB for future
+            await db.execute({
+              sql: `UPDATE leagues SET name = ? WHERE id = ? AND (name IS NULL OR name LIKE 'League %')`,
+              args: [bsdLeague.name, lid],
+            }).catch(() => {});
+          }
+        } catch {}
+      }
+    }
+
     return NextResponse.json({
       date,
       fixtures,
