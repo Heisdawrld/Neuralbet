@@ -33,6 +33,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { clamp, safeNum } from '../xg/shared';
+import { isIntelligenceEnabled } from './flags';
 
 // ─────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -94,7 +95,7 @@ function proximityScore(travelKm: number): number {
  * Returns 0 when fv.isLocalDerby is false.
  */
 export function computeDerbyIntensity(fv: any): number {
-  if (!fv?.isLocalDerby) return 0;
+  if (!isIntelligenceEnabled('derby') || !fv?.isLocalDerby) return 0;
 
   const h2hCount = safeNum(fv.h2hMatchesAvailable, 0);
   const chaos = safeNum(fv.matchChaosScore, 0.5);
@@ -117,7 +118,9 @@ export function computeDerbyIntensity(fv: any): number {
  * Returns a no-op context when isLocalDerby is false.
  */
 export function deriveDerbyContext(fv: any): DerbyContext {
-  if (!fv?.isLocalDerby) {
+  // Module-level kill switch (backtest ablation). When OFF, return no-op
+  // context so applyDerbyToXg/Volatility/Probs all become identity.
+  if (!isIntelligenceEnabled('derby') || !fv?.isLocalDerby) {
     return {
       isDerby: false,
       intensity: 0,

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "backtest": "tsx scripts/backtest.ts"
+    "backtest": "tsx scripts/backtest.ts",
+    "ablate": "tsx scripts/ablate.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

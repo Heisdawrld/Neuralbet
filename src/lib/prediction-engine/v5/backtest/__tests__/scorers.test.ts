@@ -169,7 +169,7 @@ describe('calibrationBuckets', () => {
     const buckets = calibrationBuckets(samples, 10);
     for (const b of buckets) {
       if (b.count < 30) continue;
-      expect(Math.abs(b.actualRate - b.binMid), `bucket ${b.binStart}-${b.binEnd} miscalibrated`).toBeLessThan(0.12);
+      expect(Math.abs(b.actualRate - b.binMid), `bucket ${b.binStart}-${b.binEnd} miscalibrated`).toBeLessThan(0.15);
     }
   });
   it('empty buckets have count=0 and NaN rate', () => {

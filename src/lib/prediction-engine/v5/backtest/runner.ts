@@ -49,6 +49,15 @@ export interface BacktestOptions {
   threshold?: number;
   /** Use cached predictions_v2 when available (default true). False = always re-run V5. */
   useCache?: boolean;
+  /** Only score fixtures where is_local_derby = 1. */
+  requireDerby?: boolean;
+  /** Only score fixtures from this league. */
+  leagueId?: number;
+  /**
+   * Free-text label included in the report (helps when comparing two runs:
+   * 'derby_on' vs 'derby_off', etc.).
+   */
+  label?: string;
 }
 
 export interface PerMarketScore {
@@ -68,6 +77,9 @@ export interface PerMarketScore {
 export interface BacktestReport {
   options: Required<Pick<BacktestOptions, 'threshold' | 'useCache'>> & {
     from: string; to: string; markets: string[] | 'all'; maxFixtures: number;
+    requireDerby?: boolean;
+    leagueId?: number;
+    label?: string;
   };
   fixturesScored: number;
   fixturesSkipped: number;
@@ -165,16 +177,23 @@ export async function runBacktest(opts: BacktestOptions = {}): Promise<BacktestR
 
   const db = getTursoClient();
 
-  // Load finished fixtures with non-null scores in the window
+  // Build WHERE clauses dynamically based on optional filters.
+  const whereClauses = [
+    `status = 'finished'`,
+    `home_score IS NOT NULL`, `away_score IS NOT NULL`,
+    `event_date >= ?`, `event_date <= ?`,
+  ];
+  const args: any[] = [`${since}T00:00:00Z`, `${until}T23:59:59Z`];
+  if (opts.requireDerby) whereClauses.push(`is_local_derby = 1`);
+  if (opts.leagueId) { whereClauses.push(`league_id = ?`); args.push(opts.leagueId); }
+
   const fixtures = await db.execute({
     sql: `SELECT id, home_score, away_score, event_date
           FROM events
-          WHERE status = 'finished'
-            AND home_score IS NOT NULL AND away_score IS NOT NULL
-            AND event_date >= ? AND event_date <= ?
+          WHERE ${whereClauses.join(' AND ')}
           ORDER BY event_date DESC
           LIMIT ?`,
-    args: [`${since}T00:00:00Z`, `${until}T23:59:59Z`, maxFixtures],
+    args: [...args, maxFixtures],
   });
 
   // Bucket samples per market
@@ -247,6 +266,9 @@ export async function runBacktest(opts: BacktestOptions = {}): Promise<BacktestR
       from: since, to: until,
       markets: opts.markets ?? 'all',
       maxFixtures, threshold, useCache,
+      requireDerby: opts.requireDerby,
+      leagueId: opts.leagueId,
+      label: opts.label,
     },
     fixturesScored, fixturesSkipped,
     overallBrier: brierScore(pooledSamples),

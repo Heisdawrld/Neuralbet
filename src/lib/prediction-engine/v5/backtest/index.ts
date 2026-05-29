@@ -19,3 +19,8 @@ export {
   runBacktest, formatReport,
   type BacktestOptions, type BacktestReport, type PerMarketScore,
 } from './runner';
+
+export {
+  ablateModule, formatComparison, VERDICT_NEUTRAL_THRESHOLD,
+  type AblationOptions, type AblationResult, type MarketDelta,
+} from './compare';
