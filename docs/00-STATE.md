@@ -14,6 +14,10 @@
 
 | SHA | Title |
 |---|---|
+| `a09a1dd` | **Phase 2.5.3 hotfix**: better error capture in bulk H2H sync (revealed cold-start) |
+| `82ca88f` | **Phase 2.5.2 hotfix**: clean up bulk H2H sync stats accumulator |
+| `fe6b41b` | **Phase 2.5.1 hotfix**: add sync-h2h.ts that .gitignore swallowed |
+| `6a1b570` | **Phase 2.5**: H2H sync — populate historical_matches so engine Layer 7 actually fires |
 | `2bfce31` | **Phase 2.x bugfix#2**: standings robust dedup with multi-strategy fallback |
 | `55ee798` | **Phase 2.x bugfix**: 6th silent bug (broken `impliedProbability` import) + H2H BSD fallback + standings season filter |
 | `419738c` | **Phase 2.3**: Manager debut bonus (intensity-scaled +10%→0% over 4 matches) |
@@ -89,6 +93,36 @@ src/lib/prediction-engine/v5/
     ├── manager-debut.ts        ← debut bonus + tenure decay (Phase 2.3)
     └── __tests__/              ← 47 tests across 3 suites
 ```
+
+
+
+## Phase 2.5 impact (H2H sync — 2026-05-29)
+
+Layer 7 of the xG pipeline blends 15-28% of historic H2H goals into xG.
+Before today: Layer 7 silently inactive on ~80% of fixtures because
+`historical_matches` was never populated by any sync. Today: a dedicated
+sync job + dedicated /api/v5/sync-h2h endpoint feeds the table.
+
+**First production run** (next 7 days, 147 fixtures):
+- BSD calls made: 122
+- H2H rows written: 51
+- Fixtures with H2H found: 39
+- Run time: 24s
+- Errors: 0
+
+**Engine improvement verified on real fixtures**:
+- Nice vs Saint-Étienne: dataCompleteness 0.5 → **0.9** (H2H_DATA flag +0.15 + 4 meetings synced incl. an 8-0 from 2024)
+- Dinamo vs FCSB: dataCompleteness 0.5 → **0.75** (2 H2H meetings synced)
+
+Layer 7 will continue to populate organically as future syncs run.
+
+## Bug count update
+
+The Phase 2.5 work also surfaced two more silent issues:
+- **Bug #7**: my .gitignore rule `db/` (intended for root /db/) matched any directory named db, silently swallowing src/lib/db/sync-h2h.ts so it never reached GitHub. Caught by Vercel's deploy logs showing import error. Fixed by anchoring to `/db/`.
+- **Bug #8 (cosmetic)**: bulk H2H sync stats accumulator had nested type checks that never landed correctly, reporting 0 work done when 30s of BSD calls were actually firing. Fixed by clean discriminator branch.
+
+Running tally: **8 silent bugs caught + fixed** by the discipline-first work.
 
 ## Phase 2 queue
 
