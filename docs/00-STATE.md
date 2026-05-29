@@ -14,6 +14,8 @@
 
 | SHA | Title |
 |---|---|
+| `2bfce31` | **Phase 2.x bugfix#2**: standings robust dedup with multi-strategy fallback |
+| `55ee798` | **Phase 2.x bugfix**: 6th silent bug (broken `impliedProbability` import) + H2H BSD fallback + standings season filter |
 | `419738c` | **Phase 2.3**: Manager debut bonus (intensity-scaled +10%→0% over 4 matches) |
 | `49a79e5` | **Phase 2.2**: Intelligence flags + backtest ablation infrastructure |
 | `8cdb2d9` | docs |
@@ -47,7 +49,12 @@
 
 **Backtest runner** extended with `requireDerby`, `leagueId`, `label` filters.
 
-## The 5 silent production bugs caught + fixed (cumulative)
+## User-reported bugs also fixed this session
+
+- **Standings duplication** — `/api/match/[id]` returned multi-season rows for international qualifiers (469 rows for Iran-Gambia, 64 for Chinese league). Now scoped to latest season_id + deduped by team_id.
+- **H2H always empty** — events table only has forward window; BSD H2H fallback added (new `src/lib/bsd-h2h.ts`).
+
+## The 6 silent production bugs caught + fixed (cumulative)
 
 | # | Bug | Severity | Phase |
 |---|---|---|---|
@@ -56,6 +63,7 @@
 | 3 | Sanity dampener could violate monotonicity | Medium | 1.2 |
 | 4 | NaN propagation in form-boosts | High | 1.3 |
 | 5 | Lossy cache reconstruction in `/api/v5/predict` | High | 2.1.1 |
+| 6 | Phase 1.8 deleted `prediction-engine/utils.ts` while feature-builder still imported `impliedProbability` — masked by `ignoreBuildErrors:true`. Bookmaker odds blending in calibration was silently dead in production for ~3 hours | **HIGH** | 2.x bugfix |
 
 ## Engine file map (post Phase 2.3)
 
