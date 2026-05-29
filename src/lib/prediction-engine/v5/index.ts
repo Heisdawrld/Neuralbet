@@ -22,6 +22,14 @@ import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from '.
 import { calibrateProbabilities } from './math/calibration';
 import { estimateExpectedGoals } from './xg';
 import { classifyMatchScript } from './script';
+import {
+  buildMarketCandidates,
+  computeImpliedProbabilities,
+  scoreMarketCandidates,
+  pruneWeakCandidates,
+  rankMarkets,
+  selectBestPickOrAbstain,
+} from './markets';
 
 // ═══════════════════════════════════════════════════════════════════════
 // TYPES
@@ -189,26 +197,7 @@ export interface FeatureVector {
   priceBookmakerCount?: number;
 }
 
-export interface MarketCandidate {
-  marketKey: string;
-  selection: string;
-  modelProbability: number;
-  impliedProbability: number | null;
-  edge: number | null;
-  finalScore: number;
-  bookmakerOdds: number | null;
-  riskLevel?: string;
-  edgeLabel?: string;
-  tacticalFitScore?: number;
-  reasons?: string[];
-  advisor_status?: string;
-  valueTier?: string;
-  ev?: number | null;
-  isModelOnly?: boolean;
-  isValueBet?: boolean;
-  isSharpValue?: boolean;
-  [key: string]: any;
-}
+export type { MarketCandidate } from './types';
 
 export interface PredictionResult {
   fixtureId: number;
@@ -287,559 +276,45 @@ function clamp(num: number, min: number, max: number): number {
 // MARKET REGISTRY (32 markets)
 // ═══════════════════════════════════════════════════════════════════════
 
-const MARKET_REGISTRY: Record<string, { selectable: boolean; requiresOdds: boolean; headlineEligible: boolean }> = {
-  home_win: { selectable: true, requiresOdds: true, headlineEligible: true },
-  away_win: { selectable: true, requiresOdds: true, headlineEligible: true },
-  draw: { selectable: true, requiresOdds: true, headlineEligible: false },
-  over_15: { selectable: true, requiresOdds: true, headlineEligible: true },
-  over_25: { selectable: true, requiresOdds: true, headlineEligible: true },
-  over_35: { selectable: true, requiresOdds: true, headlineEligible: false },
-  under_15: { selectable: true, requiresOdds: true, headlineEligible: false },
-  under_25: { selectable: true, requiresOdds: true, headlineEligible: true },
-  under_35: { selectable: true, requiresOdds: true, headlineEligible: true },
-  btts_yes: { selectable: true, requiresOdds: true, headlineEligible: true },
-  btts_no: { selectable: true, requiresOdds: true, headlineEligible: true },
-  double_chance_home: { selectable: true, requiresOdds: true, headlineEligible: false },
-  double_chance_away: { selectable: true, requiresOdds: true, headlineEligible: false },
-  home_over_05: { selectable: true, requiresOdds: true, headlineEligible: false },
-  home_over_15: { selectable: true, requiresOdds: true, headlineEligible: false },
-  home_over_25: { selectable: true, requiresOdds: true, headlineEligible: false },
-  home_under_15: { selectable: true, requiresOdds: true, headlineEligible: false },
-  away_over_05: { selectable: true, requiresOdds: true, headlineEligible: false },
-  away_over_15: { selectable: true, requiresOdds: true, headlineEligible: false },
-  away_over_25: { selectable: true, requiresOdds: true, headlineEligible: false },
-  away_under_15: { selectable: true, requiresOdds: true, headlineEligible: false },
-  win_either_half_home: { selectable: true, requiresOdds: true, headlineEligible: false },
-  win_either_half_away: { selectable: true, requiresOdds: true, headlineEligible: false },
-  dnb_home: { selectable: true, requiresOdds: true, headlineEligible: false },
-  dnb_away: { selectable: true, requiresOdds: true, headlineEligible: false },
-  handicap_home_minus1: { selectable: true, requiresOdds: true, headlineEligible: true },
-  handicap_away_minus1: { selectable: true, requiresOdds: true, headlineEligible: true },
-  handicap_home_plus1: { selectable: true, requiresOdds: true, headlineEligible: false },
-  handicap_away_plus1: { selectable: true, requiresOdds: true, headlineEligible: false },
-};
 
-function isHeadlineEligibleMarket(marketKey: string): boolean {
-  return MARKET_REGISTRY[marketKey]?.headlineEligible === true;
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // BUILD MARKET CANDIDATES
 // ═══════════════════════════════════════════════════════════════════════
 
-const MARKET_DEFINITIONS = [
-  { marketKey: 'home_win', selection: 'Home Win', probKey: 'homeWin' },
-  { marketKey: 'away_win', selection: 'Away Win', probKey: 'awayWin' },
-  { marketKey: 'draw', selection: 'Draw', probKey: 'draw' },
-  { marketKey: 'double_chance_home', selection: 'Double Chance 1X', probKey: null, compute: (p: Record<string, number>) => safeNum(p.homeWin, 0) + safeNum(p.draw, 0) },
-  { marketKey: 'double_chance_away', selection: 'Double Chance X2', probKey: null, compute: (p: Record<string, number>) => safeNum(p.awayWin, 0) + safeNum(p.draw, 0) },
-  { marketKey: 'dnb_home', selection: 'Home Win (DNB)', probKey: null, compute: (p: Record<string, number>) => { const h = safeNum(p.homeWin, 0); const a = safeNum(p.awayWin, 0); const d = h + a; return d > 0.01 ? h / d : 0; } },
-  { marketKey: 'dnb_away', selection: 'Away Win (DNB)', probKey: null, compute: (p: Record<string, number>) => { const h = safeNum(p.homeWin, 0); const a = safeNum(p.awayWin, 0); const d = h + a; return d > 0.01 ? a / d : 0; } },
-  { marketKey: 'over_15', selection: 'Over 1.5 Goals', probKey: 'over15' },
-  { marketKey: 'over_25', selection: 'Over 2.5 Goals', probKey: 'over25' },
-  { marketKey: 'over_35', selection: 'Over 3.5 Goals', probKey: 'over35' },
-  { marketKey: 'under_15', selection: 'Under 1.5 Goals', probKey: 'under15' },
-  { marketKey: 'under_25', selection: 'Under 2.5 Goals', probKey: 'under25' },
-  { marketKey: 'under_35', selection: 'Under 3.5 Goals', probKey: 'under35' },
-  { marketKey: 'btts_yes', selection: 'BTTS Yes', probKey: 'bttsYes' },
-  { marketKey: 'btts_no', selection: 'BTTS No', probKey: 'bttsNo' },
-  { marketKey: 'home_over_05', selection: 'Home Over 0.5 Goals', probKey: 'homeOver05' },
-  { marketKey: 'home_over_15', selection: 'Home Over 1.5 Goals', probKey: 'homeOver15' },
-  { marketKey: 'home_over_25', selection: 'Home Over 2.5 Goals', probKey: 'homeOver25' },
-  { marketKey: 'home_under_15', selection: 'Home Under 1.5 Goals', probKey: 'homeUnder15' },
-  { marketKey: 'away_over_05', selection: 'Away Over 0.5 Goals', probKey: 'awayOver05' },
-  { marketKey: 'away_over_15', selection: 'Away Over 1.5 Goals', probKey: 'awayOver15' },
-  { marketKey: 'away_over_25', selection: 'Away Over 2.5 Goals', probKey: 'awayOver25' },
-  { marketKey: 'away_under_15', selection: 'Away Under 1.5 Goals', probKey: 'awayUnder15' },
-  { marketKey: 'win_either_half_home', selection: 'Home Win Either Half', probKey: null, compute: (p: Record<string, number>) => safeNum(p.homeOver05, 0) * 0.75 },
-  { marketKey: 'win_either_half_away', selection: 'Away Win Either Half', probKey: null, compute: (p: Record<string, number>) => safeNum(p.awayOver05, 0) * 0.7 },
-  { marketKey: 'handicap_home_minus1', selection: 'Home -1 (Handicap)', probKey: 'handicapHome1' },
-  { marketKey: 'handicap_away_minus1', selection: 'Away -1 (Handicap)', probKey: 'handicapAwayMinus1' },
-  { marketKey: 'handicap_home_plus1', selection: 'Home +1 (Handicap)', probKey: 'handicapHomePlus1' },
-  { marketKey: 'handicap_away_plus1', selection: 'Away +1 (Handicap)', probKey: 'handicapAway1' },
-];
 
-function buildMarketCandidates(calibratedProbs: Record<string, number>): MarketCandidate[] {
-  const probs = calibratedProbs || {};
-  const candidates: MarketCandidate[] = [];
-  for (const def of MARKET_DEFINITIONS) {
-    let modelProbability: number;
-    if (def.probKey && probs[def.probKey] != null) {
-      modelProbability = safeNum(probs[def.probKey], 0);
-    } else if (def.compute) {
-      modelProbability = safeNum(def.compute(probs), 0);
-    } else {
-      continue;
-    }
-    candidates.push({
-      marketKey: def.marketKey,
-      selection: def.selection,
-      modelProbability: parseFloat(clamp(modelProbability, 0, 1).toFixed(4)),
-      impliedProbability: null,
-      edge: null,
-      finalScore: 0,
-      bookmakerOdds: null,
-    });
-  }
-  return candidates;
-}
 
-// ═══════════════════════════════════════════════════════════════════════
-// IMPLIED PROBABILITIES / ODDS LOOKUP
-// ═══════════════════════════════════════════════════════════════════════
-
-const ODDS_MAP: Record<string, string[]> = {
-  home_win: ['home_win', 'homeWin', 'home'],
-  draw: ['draw', 'x', 'X'],
-  away_win: ['away_win', 'awayWin', 'away'],
-  over_15: ['over_15', 'over_1_5', 'over15', 'over_15_goals'],
-  over_25: ['over_25', 'over_2_5', 'over25', 'over_25_goals'],
-  over_35: ['over_35', 'over_3_5', 'over35', 'over_35_goals'],
-  under_15: ['under_15', 'under_1_5', 'under15', 'under_15_goals'],
-  under_25: ['under_25', 'under_2_5', 'under25', 'under_25_goals'],
-  under_35: ['under_35', 'under_3_5', 'under35', 'under_35_goals'],
-  btts_yes: ['btts_yes', 'bttsYes'],
-  btts_no: ['btts_no', 'bttsNo'],
-  double_chance_home: ['double_chance_1x', 'double_chance_1X'],
-  double_chance_away: ['double_chance_x2', 'double_chance_X2'],
-  dnb_home: ['draw_no_bet_home', 'dnb_home'],
-  dnb_away: ['draw_no_bet_away', 'dnb_away'],
-};
-
-function lookupOdds(marketKey: string, oddsSnapshot: Record<string, any> | null): number | null {
-  if (!oddsSnapshot) return null;
-  const keys = ODDS_MAP[marketKey] || [marketKey];
-  for (const k of keys) {
-    if (oddsSnapshot[k] != null) {
-      const val = safeNum(oddsSnapshot[k], 0);
-      if (val > 1.0) return val;
-    }
-  }
-  return null;
-}
-
-function computeImpliedProbabilities(candidates: MarketCandidate[], oddsSnapshot: Record<string, any> | null): MarketCandidate[] {
-  return candidates.map(candidate => {
-    const decimalOdds = lookupOdds(candidate.marketKey, oddsSnapshot);
-    if (decimalOdds && decimalOdds > 1.0) {
-      const impliedProbability = parseFloat((1 / decimalOdds).toFixed(4));
-      const edge = parseFloat((candidate.modelProbability - impliedProbability).toFixed(4));
-      return { ...candidate, impliedProbability, edge, bookmakerOdds: decimalOdds };
-    }
-    return { ...candidate, impliedProbability: null, edge: null, bookmakerOdds: null };
-  });
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // SCORING & RANKING
 // ═══════════════════════════════════════════════════════════════════════
 
-const SCRIPT_MARKET_FIT: Record<string, Record<string, number>> = {
-  dominant_home_pressure: { home_win: 0.92, dnb_home: 0.85, home_over_15: 0.85, win_either_half_home: 0.80, handicap_home_minus1: 0.78, away_under_15: 0.78, double_chance_home: 0.72, under_25: 0.68, btts_no: 0.65, home_over_25: 0.60 },
-  dominant_away_pressure: { away_win: 0.92, dnb_away: 0.85, away_over_15: 0.85, win_either_half_away: 0.80, handicap_away_minus1: 0.78, home_under_15: 0.78, double_chance_away: 0.72, under_25: 0.68, btts_no: 0.65, away_over_25: 0.60 },
-  open_end_to_end: { btts_yes: 0.92, over_25: 0.88, over_35: 0.72, home_over_05: 0.70, away_over_05: 0.70, over_15: 0.65, home_over_15: 0.62, away_over_15: 0.62, under_25: 0.15, btts_no: 0.15 },
-  tight_low_event: { under_25: 0.92, btts_no: 0.88, under_35: 0.75, away_under_15: 0.72, home_under_15: 0.72, dnb_home: 0.65, dnb_away: 0.65, double_chance_home: 0.60, double_chance_away: 0.60 },
-  chaotic_unreliable: {},
-};
 
-function getTacticalFit(marketKey: string, script: ScriptOutput): number {
-  if (script.primary === 'chaotic_unreliable') return 0.15;
-  const primaryMap = SCRIPT_MARKET_FIT[script.primary] || {};
-  const fit = primaryMap[marketKey];
-  if (fit != null) return fit;
-  if (script.secondary && script.secondary !== 'chaotic_unreliable') {
-    const secondaryFit = (SCRIPT_MARKET_FIT[script.secondary] || {})[marketKey];
-    if (secondaryFit != null) return secondaryFit * 0.7;
-  }
-  return 0.4;
-}
 
-const BAD_MARKET_PENALTY: Record<string, (c: MarketCandidate) => number> = {
-  home_over_05: () => 0.9,
-  away_over_05: () => 0.9,
-  home_under_15: () => 0.45,
-  away_under_15: () => 0.45,
-  win_either_half_home: () => 0.3,
-  win_either_half_away: () => 0.3,
-  under_35: (c) => clamp(Math.max(0, safeNum(c.modelProbability, 0) - 0.72) * 2.5, 0, 0.65),
-  over_15: (c) => { const odds = safeNum(c.bookmakerOdds, 0); const prob = safeNum(c.modelProbability, 0); if (odds > 1.0 && odds < 1.30) return 0.80; if (odds >= 1.30 && odds < 1.40) return clamp(0.25 + (0.40 - prob) * 1.5, 0.10, 0.45); return 0; },
-  dnb_home: (c) => clamp(Math.max(0, safeNum(c.modelProbability, 0) - 0.60) * 1.0, 0, 0.4),
-  dnb_away: (c) => clamp(Math.max(0, safeNum(c.modelProbability, 0) - 0.60) * 1.0, 0, 0.4),
-  double_chance_home: (c) => clamp(Math.max(0, safeNum(c.modelProbability, 0) - 0.60) * 1.8, 0, 0.8),
-  double_chance_away: (c) => clamp(Math.max(0, safeNum(c.modelProbability, 0) - 0.60) * 1.8, 0, 0.8),
-};
 
-function scoreMarketCandidates(candidates: MarketCandidate[], script: ScriptOutput, fv: FeatureVector): MarketCandidate[] {
-  const dataSupportScore = clamp(safeNum(fv.dataCompletenessScore, 0.5), 0, 1);
-  const volatilityPenalty = clamp(safeNum(fv.matchChaosScore, 0.5), 0, 1);
-  const homeMatches = safeNum(fv.homeMatchesAvailable, 10);
-  const awayMatches = safeNum(fv.awayMatchesAvailable, 10);
-  const isDataStarved = homeMatches < 5 || awayMatches < 5;
-  const starvationPenalty = isDataStarved ? 0.35 : 0;
-  const dataCompleteness = safeNum(fv.dataCompletenessScore, 0.5);
-  const matchChaos = safeNum(fv.matchChaosScore, 0.5);
-  const upsetRisk = safeNum(fv.upsetRiskScore, 0.5);
-  const predScore = (dataCompleteness * 0.5) + ((1 - matchChaos) * 0.3) + ((1 - upsetRisk) * 0.2);
-
-  return candidates.map(candidate => {
-    const modelConfidenceScore = clamp(safeNum(candidate.modelProbability, 0), 0, 1);
-    const rawEdge = safeNum(candidate.edge, 0);
-    const edgeScore = candidate.edge != null ? clamp(rawEdge * 5, -1, 1) : 0;
-    const evScore = candidate.bookmakerOdds && candidate.bookmakerOdds > 1.0
-      ? clamp((candidate.modelProbability * candidate.bookmakerOdds - 1) * 3, -1, 1) : 0;
-    const combinedEdgeScore = (edgeScore * 0.4) + (evScore * 0.6);
-
-    let tacticalFitScore = getTacticalFit(candidate.marketKey, script);
-    if (fv.tacticalMatchup) {
-      const tm = fv.tacticalMatchup;
-      if (candidate.marketKey.includes('home') && tm.homeStyleEdge > 0) tacticalFitScore += 0.2;
-      if (candidate.marketKey.includes('away') && tm.awayStyleEdge > 0) tacticalFitScore += 0.2;
-      tacticalFitScore = clamp(tacticalFitScore, 0, 1);
-    }
-
-    // Volatility as market signal
-    let volatilityAdjustment = 0;
-    const marketKey = candidate.marketKey;
-    if (volatilityPenalty > 0.55) {
-      if (marketKey.includes('over') || marketKey === 'btts_yes') volatilityAdjustment = clamp(volatilityPenalty * 0.15, 0, 0.08);
-      else if (marketKey.includes('under') || marketKey === 'btts_no') volatilityAdjustment = -clamp(volatilityPenalty * 0.10, 0, 0.06);
-      else if (marketKey.includes('win') && !marketKey.includes('either')) volatilityAdjustment = -clamp(volatilityPenalty * 0.12, 0, 0.08);
-    }
-
-    const badMarketPenaltyFn = BAD_MARKET_PENALTY[candidate.marketKey];
-    const badMarketPenalty = badMarketPenaltyFn ? badMarketPenaltyFn(candidate) : 0;
-
-    // Script mismatch penalty
-    let scriptMismatchPenalty = 0;
-    if (script.primary === 'tight_low_event' && marketKey.includes('over')) scriptMismatchPenalty = 0.5;
-    else if (script.primary === 'open_end_to_end' && marketKey.includes('under')) scriptMismatchPenalty = 0.5;
-
-    // Form momentum
-    const homePointsLast5 = safeNum(fv.homePointsLast5, 5);
-    const awayPointsLast5 = safeNum(fv.awayPointsLast5, 5);
-    const formGap = (homePointsLast5 - awayPointsLast5) / 15;
-    let formMomentumScore = 0.3;
-    if (marketKey.includes('home') && formGap > 0.2) formMomentumScore = 0.6;
-    else if (marketKey.includes('away') && formGap < -0.2) formMomentumScore = 0.6;
-
-    const riskPenaltyScore = (marketKey.includes('over') || marketKey === 'btts_yes' ? 0.08 : 0.14) * volatilityPenalty
-      + 0.12 * scriptMismatchPenalty + starvationPenalty;
-    const productPenaltyScore = 0.14 * badMarketPenalty;
-
-    const modelScore = 0.12 * modelConfidenceScore;
-    const marketEdgeComponent = 0.19 * combinedEdgeScore;
-    const tacticalFitComponent = 0.12 * tacticalFitScore;
-    const predictabilityComponent = 0.08 * predScore;
-    const dataSupportComponent = 0.07 * dataSupportScore;
-    const formMomentumComponent = 0.03 * formMomentumScore;
-
-    let finalScore = modelScore + marketEdgeComponent + tacticalFitComponent
-      + predictabilityComponent + dataSupportComponent + formMomentumComponent
-      + volatilityAdjustment - riskPenaltyScore - productPenaltyScore;
-
-    // EV bonus
-    if (candidate.impliedProbability && candidate.impliedProbability > 0 && (candidate.edge ?? 0) >= 0.05) finalScore += 0.08;
-
-    // Advisor status
-    const odds = safeNum(candidate.bookmakerOdds, 0);
-    const prob = safeNum(candidate.modelProbability, 0);
-    const ev = odds > 1.0 ? (prob * odds) - 1 : null;
-    const isPositiveEV = ev != null && ev >= 0;
-    let advisorStatus: string;
-    if (prob >= 0.72 && odds >= 1.30) advisorStatus = predScore < 0.20 ? 'ACCA' : 'BET';
-    else if (prob >= 0.58 && odds >= 1.30 && odds <= 1.65) advisorStatus = isPositiveEV ? 'ACCA' : 'SKIP';
-    else if (prob >= 0.60 && odds >= 1.25) advisorStatus = isPositiveEV ? 'ACCA' : 'SKIP';
-    else if (prob >= 0.50 && isPositiveEV) advisorStatus = 'ACCA';
-    else advisorStatus = 'SKIP';
-
-    return {
-      ...candidate,
-      tacticalFitScore: parseFloat(tacticalFitScore.toFixed(3)),
-      badMarketPenalty: parseFloat(badMarketPenalty.toFixed(3)),
-      finalScore: parseFloat(clamp(finalScore, -0.5, 1.0).toFixed(4)),
-      advisor_status: advisorStatus,
-      ev: ev ?? null,
-      volatilityAdjustment: parseFloat(volatilityAdjustment.toFixed(4)),
-    };
-  });
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // PRUNE WEAK CANDIDATES
 // ═══════════════════════════════════════════════════════════════════════
 
-const MARKET_MIN_PROB: Record<string, number> = {
-  btts_yes: 0.64, btts_no: 0.68,
-  double_chance_home: 0.68, double_chance_away: 0.68,
-  draw: 0.60, home_win: 0.56, away_win: 0.56,
-  dnb_home: 0.60, dnb_away: 0.60,
-  over_25: 0.55, under_25: 0.55,
-  over_15: 0.60, under_35: 0.72, over_35: 0.60,
-};
 
-function pruneWeakCandidates(scored: MarketCandidate[], fv: FeatureVector, script: ScriptOutput): MarketCandidate[] {
-  const pruned: MarketCandidate[] = [];
-  const minProb = 0.60;
-  const minTactical = 0.12;
-
-  for (const c of scored) {
-    const prob = safeNum(c.modelProbability, 0);
-    const tactical = safeNum(c.tacticalFitScore, 0);
-    const score = safeNum(c.finalScore, 0);
-    const edge = safeNum(c.edge, 0);
-    const odds = safeNum(c.bookmakerOdds, 0);
-    const ev = odds > 1.0 ? (prob * odds) - 1 : 0;
-
-    const marketFloor = MARKET_MIN_PROB[c.marketKey] ?? minProb;
-
-    // Probability floor with smart risk exception
-    if (prob < marketFloor) {
-      const dataCompleteness = safeNum(fv.dataCompletenessScore, 0.5);
-      const isComfortMarket = ['under_35', 'over_15', 'double_chance_home', 'double_chance_away', 'home_over_05', 'away_over_05'].includes(c.marketKey);
-      const smartRiskException = ev >= 0.02 && tactical >= 0.65 && !isComfortMarket && prob >= marketFloor - 0.08 && dataCompleteness >= 0.40;
-      if (!smartRiskException) continue;
-    }
-
-    // Value trap filter
-    if (edge > 0.35) continue;
-
-    // Under 3.5 comfort guard
-    if (c.marketKey === 'under_35' && prob < 0.74) continue;
-
-    // Over 1.5 comfort guard
-    if (c.marketKey === 'over_15') {
-      if (odds > 1.0 && odds < 1.25) continue;
-      if (odds >= 1.25 && odds < 1.40 && score < 0.35) continue;
-    }
-
-    if (tactical < minTactical) continue;
-    if (score <= 0) continue;
-    pruned.push(c);
-  }
-  return pruned;
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // RANK MARKETS
 // ═══════════════════════════════════════════════════════════════════════
 
-const COMFORT_PENALTY: Record<string, number> = {
-  under_35: 0.150, over_15: 0.100,
-  double_chance_home: 0.080, double_chance_away: 0.080,
-  home_over_05: 0.120, away_over_05: 0.120,
-  dnb_home: 0.040, dnb_away: 0.040,
-};
 
-const SPECIFICITY_BONUS: Record<string, number> = {
-  home_win: 0.060, away_win: 0.060, over_25: 0.050, under_25: 0.035,
-  btts_yes: 0.045, btts_no: 0.025, home_over_15: 0.030, away_over_15: 0.030,
-};
 
-function rankMarkets(candidates: MarketCandidate[]): MarketCandidate[] {
-  return [...candidates]
-    .map(c => {
-      const finalScore = safeNum(c.finalScore, 0);
-      const probability = safeNum(c.modelProbability, 0);
-      const tacticalFit = safeNum(c.tacticalFitScore, 0.4);
-      const edge = safeNum(c.edge, 0);
-      const comfortPenalty = COMFORT_PENALTY[c.marketKey] || 0;
-      const specificityBonus = SPECIFICITY_BONUS[c.marketKey] || 0;
-      const edgeComponent = edge > 0 ? Math.min(edge, 0.18) * 0.25 : Math.max(edge, -0.12) * 0.12;
-
-      const headlineQualityScore = finalScore * 0.45
-        + probability * 0.18
-        + tacticalFit * 0.12
-        + edgeComponent
-        + specificityBonus
-        - comfortPenalty;
-
-      return { ...c, headlineQualityScore: parseFloat(headlineQualityScore.toFixed(4)) };
-    })
-    .sort((a, b) => {
-      const qualityGap = safeNum(b.headlineQualityScore, 0) - safeNum(a.headlineQualityScore, 0);
-      if (Math.abs(qualityGap) > 0.003) return qualityGap;
-      return safeNum(b.modelProbability, 0) - safeNum(a.modelProbability, 0);
-    });
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // SELECT BEST PICK OR ABSTAIN
 // ═══════════════════════════════════════════════════════════════════════
 
-function computeRiskLevel(pick: MarketCandidate, fv: FeatureVector, script: ScriptOutput): string {
-  const prob = safeNum(pick.modelProbability, 0);
-  const chaos = safeNum(fv.matchChaosScore, 0.5);
-  const marketKey = pick.marketKey || '';
-  const isChaotic = script.primary === 'chaotic_unreliable' || script.primary === 'open_end_to_end';
-  const isStable = ['under_35', 'under_25', 'double_chance_home', 'double_chance_away', 'dnb_home', 'dnb_away'].includes(marketKey);
-  const isVolatile = ['btts_yes', 'over_35', 'over_25', 'home_over_25', 'away_over_25'].includes(marketKey);
 
-  if (prob >= 0.74) {
-    if (isChaotic && chaos >= 0.80) return 'MODERATE';
-    return 'SAFE';
-  }
-  if (prob >= 0.65) {
-    if (isChaotic && chaos >= 0.72) return 'AGGRESSIVE';
-    if (isStable && chaos < 0.55) return 'SAFE';
-    return 'MODERATE';
-  }
-  if (prob >= 0.58) {
-    if (isChaotic || chaos >= 0.68 || isVolatile) return 'AGGRESSIVE';
-    return 'MODERATE';
-  }
-  return 'AGGRESSIVE';
-}
 
-function computeEdgeLabel(pick: MarketCandidate, riskLevel: string): string {
-  const prob = safeNum(pick.modelProbability, 0);
-  if (prob >= 0.74) return riskLevel === 'SAFE' ? 'STRONG EDGE' : 'GAMBLE EDGE';
-  if (prob >= 0.65) return 'MODERATE EDGE';
-  if (prob >= 0.55) return 'LEAN';
-  return 'NO EDGE';
-}
 
-function phantomScoreOf(candidate: MarketCandidate): number {
-  const prob = safeNum(candidate.modelProbability, 0);
-  const finalScore = safeNum(candidate.finalScore, prob);
-  return (prob * 0.55) + (finalScore * 0.45);
-}
 
-function isPricedCandidate(candidate: MarketCandidate): boolean {
-  if (!candidate) return false;
-  if (safeNum(candidate.bookmakerOdds, 0) > 1.0) return true;
-  const impliedProbability = safeNum(candidate.impliedProbability, 0);
-  return impliedProbability > 0 && impliedProbability < 1;
-}
 
-function isHeadlineQualityCandidate(candidate: MarketCandidate, fv: FeatureVector, script: ScriptOutput): boolean {
-  const prob = safeNum(candidate.modelProbability, 0);
-  const finalScore = safeNum(candidate.finalScore, 0);
-  const phantomScore = phantomScoreOf(candidate);
-  const dataScore = safeNum(fv.dataCompletenessScore, 0.5);
-  const risk = computeRiskLevel(candidate, fv, script);
-  const volatilityScore = safeNum(script.volatilityScore, 0.5);
-  const isHighVolatility = volatilityScore > 0.70;
-  const chaos = safeNum(fv.matchChaosScore, 0.5);
-  const edge = safeNum(candidate.edge, 0);
-
-  if (prob < 0.50) return false;
-  if (finalScore < 0.36) return false;
-  if (phantomScore < 0.50) return false;
-  if (dataScore < 0.30) return false;
-
-  if (risk === 'AGGRESSIVE' || isHighVolatility || chaos >= 0.68) {
-    if (phantomScore < 0.55) return false;
-    if (finalScore < 0.42) return false;
-    if (prob < 0.65) return false;
-  }
-
-  if ((candidate.impliedProbability ?? 0) > 0 && edge < 0.01 && prob < 0.72) return false;
-  return true;
-}
-
-function selectBestPickOrAbstain(
-  ranked: MarketCandidate[],
-  script: ScriptOutput,
-  fv: FeatureVector
-): {
-  bestPick: MarketCandidate | null;
-  backupPicks: MarketCandidate[];
-  noSafePick: boolean;
-  noSafePickReason: string | null;
-  abstainCode: string | null;
-} {
-  const pricedRanked = ranked.filter(isPricedCandidate);
-  const qualityPricedRanked = pricedRanked.filter(c => isHeadlineQualityCandidate(c, fv, script));
-
-  const abstain = (reason: string, code: string) => ({
-    bestPick: null,
-    backupPicks: ranked.slice(0, 2),
-    noSafePick: true,
-    noSafePickReason: reason,
-    abstainCode: code,
-  });
-
-  if (ranked.length === 0) return abstain('No candidates survived pruning', 'NO_CANDIDATES');
-
-  // Model-only eligibility
-  if (pricedRanked.length === 0) {
-    const modelOnly = ranked.find(c => {
-      if (!isHeadlineEligibleMarket(c.marketKey)) return false;
-      const prob = safeNum(c.modelProbability, 0);
-      const fs = safeNum(c.finalScore, 0);
-      const ps = phantomScoreOf(c);
-      const ds = safeNum(fv.dataCompletenessScore, 0.5);
-      return prob >= 0.62 && fs >= 0.42 && ps >= 0.55 && ds >= 0.40;
-    });
-    if (modelOnly) {
-      const riskLevel = computeRiskLevel(modelOnly, fv, script);
-      const edgeLabel = computeEdgeLabel(modelOnly, riskLevel);
-      return {
-        bestPick: { ...modelOnly, riskLevel, edgeLabel, isModelOnly: true, advisor_status: safeNum(modelOnly.modelProbability, 0) >= 0.72 ? 'BET' : safeNum(modelOnly.modelProbability, 0) >= 0.60 ? 'ACCA' : 'SKIP' },
-        backupPicks: ranked.slice(0, 2),
-        noSafePick: false,
-        noSafePickReason: null,
-        abstainCode: null,
-      };
-    }
-    return abstain('No priced markets available', 'NO_PRICED_MARKETS');
-  }
-
-  if (qualityPricedRanked.length === 0) {
-    const top = pricedRanked[0];
-    return abstain(`No headline-quality priced market — top prob=${(safeNum(top.modelProbability, 0) * 100).toFixed(1)}%`, 'LOW_HEADLINE_QUALITY');
-  }
-
-  const top = qualityPricedRanked[0];
-  const topProb = safeNum(top.modelProbability, 0);
-
-  if (topProb < 0.50) return abstain(`Best pick probability too low (${(topProb * 100).toFixed(1)}%)`, 'LOW_PROBABILITY');
-
-  // Separation check
-  if (qualityPricedRanked.length >= 2) {
-    const hasOdds = qualityPricedRanked.some(c => c.edge != null && c.edge !== 0);
-    const minGap = hasOdds ? 0.010 : 0.008;
-    const gap = safeNum(top.finalScore, 0) - safeNum(qualityPricedRanked[1].finalScore, 0);
-    if (gap < minGap) {
-      const secondProb = safeNum(qualityPricedRanked[1].modelProbability, 0);
-      if (topProb >= 0.60 && secondProb >= 0.60) {
-        // Both strong — trust top
-      } else {
-        return abstain('Top two headline-quality markets too close', 'WEAK_SEPARATION');
-      }
-    }
-  }
-
-  // Edge label gate
-  const annotatedTop = { ...top, riskLevel: computeRiskLevel(top, fv, script), edgeLabel: computeEdgeLabel(top, computeRiskLevel(top, fv, script)) };
-  const hasAnyOdds = qualityPricedRanked.some(c => c.edge != null && c.edge !== 0);
-  if (hasAnyOdds && annotatedTop.edgeLabel === 'NO EDGE') return abstain('Best pick has NO EDGE', 'NO_EDGE');
-
-  // Thin thesis check
-  const topFinalScore = safeNum(top.finalScore, 0);
-  const topEdge = safeNum(top.edge, 0);
-  if (topFinalScore < 0.48 && topEdge < 0.02 && safeNum(fv.dataCompletenessScore, 0.5) < 0.45 && safeNum(script.volatilityScore, 0.5) > 0.62) {
-    return abstain('Thesis too thin — weak edge with shaky evidence quality', 'THIN_THESIS');
-  }
-
-  // Conflicting evidence check
-  if (qualityPricedRanked.length >= 3) {
-    const topGap = topFinalScore - safeNum(qualityPricedRanked[1]?.finalScore, 0);
-    const thirdGap = topFinalScore - safeNum(qualityPricedRanked[2]?.finalScore, 0);
-    if (topGap < 0.018 && thirdGap < 0.032 && topEdge < 0.03) {
-      return abstain('Evidence split across multiple market angles', 'CONFLICTING_EVIDENCE');
-    }
-  }
-
-  // All gates passed
-  return {
-    bestPick: annotatedTop,
-    backupPicks: ranked.slice(0, 3).filter(p => p !== top).slice(0, 2),
-    noSafePick: false,
-    noSafePickReason: null,
-    abstainCode: null,
-  };
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // ASSESS MATCH PREDICTABILITY (upfront gate)

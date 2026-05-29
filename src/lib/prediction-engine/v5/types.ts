@@ -229,3 +229,31 @@ export interface ManagerProfile {
   clean_sheet_pct?: number;
   win_pct?: number;
 }
+
+
+// ── Market candidate (used by markets/ module) ───────────────────────
+//
+// A "candidate" is one possible bet (e.g. "Over 2.5 Goals @ 1.91 odds").
+// The engine builds 30+ candidates per fixture and ranks them. Final
+// pick is the highest-ranked candidate that survives every gate.
+
+export interface MarketCandidate {
+  marketKey: string;
+  selection: string;
+  modelProbability: number;
+  impliedProbability: number | null;
+  edge: number | null;
+  finalScore: number;
+  bookmakerOdds: number | null;
+  riskLevel?: string;
+  edgeLabel?: string;
+  tacticalFitScore?: number;
+  reasons?: string[];
+  advisor_status?: string;
+  valueTier?: string;
+  ev?: number | null;
+  isModelOnly?: boolean;
+  isValueBet?: boolean;
+  isSharpValue?: boolean;
+  [key: string]: any;
+}
