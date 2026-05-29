@@ -14,6 +14,7 @@ import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { bsdClient } from '@/lib/bsd-client';
 import { syncH2HForUpcomingFixtures } from '@/lib/db/sync-h2h';
+import { verifyAllPendingResults } from '@/lib/prediction-engine/v5/results/verify';
 
 export const dynamic = 'force-dynamic';
 
@@ -376,11 +377,26 @@ export async function POST(request: NextRequest) {
       stats.errors.push(`H2H sync failed: ${err?.message ?? err}`);
     }
 
+    // ── Step 9: Verify finished match results ──────────────────
+    // Scores finished matches against predictions for accuracy tracking.
+    let verifyStats = { verified: 0, hitRate: 0, avgBrier: 0 };
+    try {
+      const vResult = await verifyAllPendingResults();
+      verifyStats = {
+        verified: vResult.verified,
+        hitRate: vResult.accuracy.hitRate,
+        avgBrier: vResult.accuracy.avgBrier,
+      };
+    } catch (err: any) {
+      stats.errors.push(`Verify failed: ${err?.message ?? err}`);
+    }
+
     return NextResponse.json({
       success: true,
       date: targetDate,
       dateRange: { from: dateFrom, to: dateTo },
       stats,
+      verification: verifyStats,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {

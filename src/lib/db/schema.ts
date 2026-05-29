@@ -643,6 +643,27 @@ export async function initializeDatabase(): Promise<void> {
 
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_predictions_v2_status ON predictions_v2(advisor_status)`);
 
+  // ── PREDICTION RESULTS (verified outcomes — feedback loop) ───────
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS prediction_results (
+      event_id INTEGER PRIMARY KEY,
+      home_team TEXT NOT NULL DEFAULT '',
+      away_team TEXT NOT NULL DEFAULT '',
+      predicted_market TEXT,
+      predicted_selection TEXT,
+      predicted_probability REAL,
+      predicted_edge REAL,
+      actual_home_score INTEGER,
+      actual_away_score INTEGER,
+      outcome TEXT NOT NULL DEFAULT 'pending',
+      brier_score REAL,
+      verified_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )
+  `);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_pred_results_outcome ON prediction_results(outcome)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_pred_results_verified ON prediction_results(verified_at)`);
+
   // ── PREDICTION PICKS (individual market picks per fixture) ───────
   await db.execute(`
     CREATE TABLE IF NOT EXISTS prediction_picks (
