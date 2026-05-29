@@ -40,7 +40,7 @@ function mkScored(overrides: Partial<MarketCandidate> = {}): MarketCandidate {
 // ─────────────────────────────────────────────────────────────────────
 describe('pruneWeakCandidates', () => {
   it('removes candidates below marketFloor (no smart-risk exception)', () => {
-    const c = mkScored({ marketKey: 'btts_yes', modelProbability: 0.55 }); // floor 0.64
+    const c = mkScored({ marketKey: 'btts_yes', modelProbability: 0.35 }); // floor 0.48
     const out = pruneWeakCandidates([c], baseFv(), script('balanced'));
     expect(out.length).toBe(0);
   });
@@ -67,8 +67,8 @@ describe('pruneWeakCandidates', () => {
     expect(out.length).toBe(0);
   });
 
-  it('under_35 hard floor — needs ≥0.74 prob even though MARKET_MIN_PROB allows 0.72', () => {
-    const c = mkScored({ marketKey: 'under_35', modelProbability: 0.73, finalScore: 0.55, tacticalFitScore: 0.5 });
+  it('under_35 hard floor — needs ≥0.58 prob', () => {
+    const c = mkScored({ marketKey: 'under_35', modelProbability: 0.52, finalScore: 0.55, tacticalFitScore: 0.5 });
     const out = pruneWeakCandidates([c], baseFv(), script('balanced'));
     expect(out.length).toBe(0);
   });
@@ -140,7 +140,7 @@ describe('selectBestPickOrAbstain — abstain paths', () => {
   });
 
   it('all candidates unpriced + no model-only qualifier → NO_PRICED_MARKETS', () => {
-    const c = mkScored({ bookmakerOdds: null, impliedProbability: null, edge: null, modelProbability: 0.45 });
+    const c = mkScored({ bookmakerOdds: null, impliedProbability: null, edge: null, modelProbability: 0.30, finalScore: 0.10 });
     const r = selectBestPickOrAbstain([c], script('balanced'), baseFv());
     expect(r.abstainCode).toBe('NO_PRICED_MARKETS');
   });

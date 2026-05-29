@@ -96,15 +96,15 @@ export function isPricedCandidate(candidate: MarketCandidate): boolean {
 }
 
 // Headline-quality gates
-export const HQ_MIN_PROB = 0.50;
-export const HQ_MIN_FINAL_SCORE = 0.36;
-export const HQ_MIN_PHANTOM = 0.50;
-export const HQ_MIN_DATA = 0.30;
+export const HQ_MIN_PROB = 0.42;
+export const HQ_MIN_FINAL_SCORE = 0.25;
+export const HQ_MIN_PHANTOM = 0.38;
+export const HQ_MIN_DATA = 0.15;
 export const HQ_VOLATILITY_HIGH = 0.70;
 export const HQ_CHAOS_HIGH = 0.68;
-export const HQ_AGG_MIN_PHANTOM = 0.55;
-export const HQ_AGG_MIN_FINAL_SCORE = 0.42;
-export const HQ_AGG_MIN_PROB = 0.65;
+export const HQ_AGG_MIN_PHANTOM = 0.45;
+export const HQ_AGG_MIN_FINAL_SCORE = 0.32;
+export const HQ_AGG_MIN_PROB = 0.55;
 export const HQ_LOW_EDGE_CEILING = 0.01;
 export const HQ_NO_EDGE_PROB_FLOOR = 0.72;
 
@@ -143,28 +143,28 @@ export function isHeadlineQualityCandidate(
 // MODEL-ONLY FALLBACK (when no priced market qualifies)
 // ─────────────────────────────────────────────────────────────────────
 
-export const MODEL_ONLY_MIN_PROB = 0.62;
-export const MODEL_ONLY_MIN_FINAL = 0.42;
-export const MODEL_ONLY_MIN_PHANTOM = 0.55;
-export const MODEL_ONLY_MIN_DATA = 0.40;
-export const MODEL_ONLY_BET_PROB = 0.72;
-export const MODEL_ONLY_ACCA_PROB = 0.60;
+export const MODEL_ONLY_MIN_PROB = 0.45;
+export const MODEL_ONLY_MIN_FINAL = 0.25;
+export const MODEL_ONLY_MIN_PHANTOM = 0.38;
+export const MODEL_ONLY_MIN_DATA = 0.10;
+export const MODEL_ONLY_BET_PROB = 0.60;
+export const MODEL_ONLY_ACCA_PROB = 0.45;
 
 // ─────────────────────────────────────────────────────────────────────
 // ABSTAIN GATES
 // ─────────────────────────────────────────────────────────────────────
 
-export const ABSTAIN_MIN_TOP_PROB = 0.50;
+export const ABSTAIN_MIN_TOP_PROB = 0.40;
 
 // Separation
-export const SEPARATION_MIN_GAP_WITH_ODDS = 0.010;
-export const SEPARATION_MIN_GAP_NO_ODDS = 0.008;
+export const SEPARATION_MIN_GAP_WITH_ODDS = 0.005;
+export const SEPARATION_MIN_GAP_NO_ODDS = 0.003;
 export const SEPARATION_BOTH_STRONG_PROB = 0.60;
 
 // Thin thesis
-export const THIN_THESIS_FINAL = 0.48;
-export const THIN_THESIS_EDGE = 0.02;
-export const THIN_THESIS_DATA = 0.45;
+export const THIN_THESIS_FINAL = 0.35;
+export const THIN_THESIS_EDGE = 0.01;
+export const THIN_THESIS_DATA = 0.25;
 export const THIN_THESIS_VOLATILITY = 0.62;
 
 // Conflicting evidence

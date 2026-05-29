@@ -295,15 +295,17 @@ export async function buildFeatureVector(fixtureId: number): Promise<FeatureVect
   const hasManagerData = homeManagerWinPct !== null || awayManagerWinPct !== null;
   const hasRefereeData = refereeAvgGoals !== null;
 
-  let dataCompleteness = 0;
-  if (hasStatsData) dataCompleteness += 0.25;
-  if (hasXgData) dataCompleteness += 0.10;
-  if (hasOddsData) dataCompleteness += 0.20;
-  if (hasH2HData) dataCompleteness += 0.15;
-  if (hasStandingsData) dataCompleteness += 0.15;
-  if (hasLineupData) dataCompleteness += 0.05;
-  if (hasManagerData) dataCompleteness += 0.05;
-  if (hasRefereeData) dataCompleteness += 0.05;
+  // Reweighted: form + standings (most commonly available) carry more weight
+  // so the engine doesn't skip matches just because H2H or lineups are missing
+  let dataCompleteness = 0.20; // Base: league averages always available
+  if (hasStatsData) dataCompleteness += 0.30;  // form data is the most important
+  if (hasXgData) dataCompleteness += 0.05;
+  if (hasOddsData) dataCompleteness += 0.15;
+  if (hasH2HData) dataCompleteness += 0.10;
+  if (hasStandingsData) dataCompleteness += 0.10;
+  if (hasLineupData) dataCompleteness += 0.04;
+  if (hasManagerData) dataCompleteness += 0.03;
+  if (hasRefereeData) dataCompleteness += 0.03;
   dataCompleteness = Math.min(1, dataCompleteness);
 
   // ── Build FeatureVector ─────────────────────────────────────────────

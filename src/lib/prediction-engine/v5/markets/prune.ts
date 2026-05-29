@@ -18,17 +18,17 @@
 import { safeNum } from '../xg/shared';
 import type { MarketCandidate, ScriptOutput } from '../types';
 
-export const DEFAULT_MIN_PROB = 0.60;
-export const MIN_TACTICAL_FIT = 0.12;
+export const DEFAULT_MIN_PROB = 0.42;
+export const MIN_TACTICAL_FIT = 0.05;
 
 /** Per-market minimum probability — overrides DEFAULT_MIN_PROB. */
 export const MARKET_MIN_PROB: Record<string, number> = {
-  btts_yes: 0.64, btts_no: 0.68,
-  double_chance_home: 0.68, double_chance_away: 0.68,
-  draw: 0.60, home_win: 0.56, away_win: 0.56,
-  dnb_home: 0.60, dnb_away: 0.60,
-  over_25: 0.55, under_25: 0.55,
-  over_15: 0.60, under_35: 0.72, over_35: 0.60,
+  btts_yes: 0.48, btts_no: 0.50,
+  double_chance_home: 0.52, double_chance_away: 0.52,
+  draw: 0.42, home_win: 0.42, away_win: 0.42,
+  dnb_home: 0.45, dnb_away: 0.45,
+  over_25: 0.42, under_25: 0.42,
+  over_15: 0.45, under_35: 0.55, over_35: 0.45,
 };
 
 // Smart risk exception thresholds
@@ -48,7 +48,7 @@ export const COMFORT_MARKETS = new Set([
 export const VALUE_TRAP_EDGE = 0.35;
 
 // Under 3.5 hard prob floor (additional comfort guard on top of MARKET_MIN_PROB)
-export const UNDER35_HARD_FLOOR = 0.74;
+export const UNDER35_HARD_FLOOR = 0.58;
 
 // Over 1.5 comfort guards
 export const OVER15_REJECT_SHORT_ODDS = 1.25;
