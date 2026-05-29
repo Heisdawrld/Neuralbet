@@ -111,7 +111,12 @@ export async function GET(
     // duplicate rows (e.g. international qualifier 'leagues' that span many
     // editions/groups would otherwise return 469 rows with massive
     // team-name duplication).
-    const standingsResult = await db.execute({
+    // Standings query: tries (in order)
+    //   1. Rows for the latest non-null season_id in this league
+    //   2. If none, fall back to ALL rows for this league
+    // Then dedupe in TS by team_id, keeping the row with the most matches
+    // played (most recent / most authoritative for that team).
+    let standingsResult = await db.execute({
       sql: `SELECT s.* FROM standings s
             WHERE s.league_id = ?
               AND s.season_id = (
@@ -121,6 +126,31 @@ export async function GET(
             ORDER BY s.position ASC`,
       args: [leagueId, leagueId],
     });
+    if (!standingsResult.rows || standingsResult.rows.length === 0) {
+      standingsResult = await db.execute({
+        sql: `SELECT * FROM standings WHERE league_id = ? ORDER BY position ASC`,
+        args: [leagueId],
+      });
+    }
+    // Dedupe by team_id (keep highest played, then highest pts) to defend
+    // against the multi-season pollution observed in international leagues.
+    {
+      const byTeam = new Map<number, any>();
+      for (const row of standingsResult.rows || []) {
+        const tid = Number(row.team_id);
+        if (!Number.isFinite(tid)) continue;
+        const existing = byTeam.get(tid);
+        if (!existing) { byTeam.set(tid, row); continue; }
+        const ePlayed = Number(existing.played || 0);
+        const rPlayed = Number(row.played || 0);
+        if (rPlayed > ePlayed || (rPlayed === ePlayed && Number(row.pts || 0) > Number(existing.pts || 0))) {
+          byTeam.set(tid, row);
+        }
+      }
+      const deduped = Array.from(byTeam.values())
+        .sort((a, b) => Number(a.position || 999) - Number(b.position || 999));
+      standingsResult = { ...standingsResult, rows: deduped } as any;
+    }
 
     // ── Managers ───────────────────────────────────────────────────────
     const homeCoachId = event.home_coach_id ? Number(event.home_coach_id) : null;
