@@ -74,21 +74,46 @@ export async function GET(
     // forward window doesn't include past meetings (typical for newly-
     // tracked fixtures or international friendlies), fall back to a
     // direct BSD lookup so the H2H tab isn't empty.
+    // H2H lookup — three-tier fallback chain:
+    //   1. historical_matches (populated by sync-h2h.ts)
+    //   2. events table (only if past meetings happen to be in our forward window)
+    //   3. BSD direct API call (slowest, last resort)
     let h2hRows: any[] = [];
+
+    // Tier 1: historical_matches (synced H2H — fast, cached)
     try {
-      const h2hResult = await db.execute({
-        sql: `SELECT home_team_id, away_team_id, home_team, away_team, home_score, away_score, event_date, status
-              FROM events WHERE status = 'finished'
-              AND ((home_team_id = ? AND away_team_id = ?) OR (home_team_id = ? AND away_team_id = ?))
-              AND home_score IS NOT NULL AND away_score IS NOT NULL
-              ORDER BY event_date DESC LIMIT 10`,
-        args: [homeTeamId, awayTeamId, awayTeamId, homeTeamId],
+      const r = await db.execute({
+        sql: `SELECT home_team_id, away_team_id, home_team, away_team,
+                     home_score, away_score, date AS event_date, 'finished' AS status
+              FROM historical_matches
+              WHERE fixture_id = ? AND type = 'h2h'
+              ORDER BY date DESC LIMIT 10`,
+        args: [eventId],
       });
-      h2hRows = h2hResult.rows || [];
+      h2hRows = r.rows || [];
     } catch (err) {
-      console.warn('[Match API] H2H query failed:', err);
+      console.warn('[Match API] historical_matches H2H query failed:', err);
     }
 
+    // Tier 2: events table (only if any past meetings happen to be there)
+    if (h2hRows.length === 0) {
+      try {
+        const h2hResult = await db.execute({
+          sql: `SELECT home_team_id, away_team_id, home_team, away_team,
+                       home_score, away_score, event_date, status
+                FROM events WHERE status = 'finished'
+                AND ((home_team_id = ? AND away_team_id = ?) OR (home_team_id = ? AND away_team_id = ?))
+                AND home_score IS NOT NULL AND away_score IS NOT NULL
+                ORDER BY event_date DESC LIMIT 10`,
+          args: [homeTeamId, awayTeamId, awayTeamId, homeTeamId],
+        });
+        h2hRows = h2hResult.rows || [];
+      } catch (err) {
+        console.warn('[Match API] events H2H query failed:', err);
+      }
+    }
+
+    // Tier 3: live BSD fetch (slowest, only when nothing local exists)
     if (h2hRows.length === 0) {
       const bsdH2H = await fetchH2HFromBSD(homeTeamId, awayTeamId);
       h2hRows = bsdH2H.map((m) => ({

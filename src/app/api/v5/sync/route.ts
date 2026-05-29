@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { bsdClient } from '@/lib/bsd-client';
+import { syncH2HForUpcomingFixtures } from '@/lib/db/sync-h2h';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,7 @@ interface SyncStats {
   odds: number;
   standings: number;
   lineups: number;
+  h2h: number;
   errors: string[];
 }
 
@@ -58,6 +60,7 @@ export async function POST(request: NextRequest) {
       odds: 0,
       standings: 0,
       lineups: 0,
+      h2h: 0,
       errors: [],
     };
 
@@ -358,6 +361,19 @@ export async function POST(request: NextRequest) {
       } catch {
         // Lineup data may not be available for all events
       }
+    }
+
+    // ── Step 8: Sync H2H for upcoming fixtures (background-style) ─
+    // Pulls last 10 meetings from BSD for each upcoming fixture that
+    // lacks fresh H2H data. Idempotent and concurrency-capped.
+    try {
+      const h2hStats = await syncH2HForUpcomingFixtures(7);
+      stats.h2h = h2hStats.h2hRowsWritten;
+      if (h2hStats.errors.length > 0) {
+        stats.errors.push(...h2hStats.errors.slice(0, 5));
+      }
+    } catch (err: any) {
+      stats.errors.push(`H2H sync failed: ${err?.message ?? err}`);
     }
 
     return NextResponse.json({
