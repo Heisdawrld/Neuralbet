@@ -70,6 +70,11 @@ export class BSDClient {
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  // ── Public fetch (for on-demand enrichment) ──────────────────────
+  async fetchWithRetryPublic<T>(path: string): Promise<T> {
+    return this.fetchWithRetry<T>(path);
+  }
+
   // ── Public API Methods ─────────────────────────────────────────────
 
   /**

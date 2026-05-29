@@ -4,6 +4,8 @@ import { initializeDatabase } from '@/lib/db/schema';
 import { runV5Prediction } from '@/lib/prediction-engine/v5';
 import { adaptV5ToPunterTip } from '@/lib/prediction-engine/v5/adapters/punter-tip';
 import { fetchH2HFromBSD } from '@/lib/bsd-h2h';
+import { bsdClient } from '@/lib/bsd-client';
+import { safeExecute } from '@/lib/db/turso-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,30 +46,84 @@ export async function GET(
     const homeTeamId = Number(event.home_team_id);
     const awayTeamId = Number(event.away_team_id);
 
-    // ── League Info ────────────────────────────────────────────────────
-    const leagueResult = await db.execute({
-      sql: `SELECT * FROM leagues WHERE id = ?`,
-      args: [leagueId],
-    });
-    const league = leagueResult.rows[0] || null;
+    // ── ON-DEMAND ENRICHMENT ──────────────────────────────────────────
+    // When data is missing from DB, fetch from BSD API and store it.
+    // This ensures every match detail page has full data regardless
+    // of whether the batch sync covered this specific event.
 
-    // ── Event Odds ─────────────────────────────────────────────────────
-    const oddsResult = await db.execute({
-      sql: `SELECT * FROM event_odds WHERE event_id = ?`,
-      args: [eventId],
-    });
+    // League info (fetch from BSD if name is missing)
+    let leagueResult = await db.execute({ sql: `SELECT * FROM leagues WHERE id = ?`, args: [leagueId] });
+    let league = leagueResult.rows[0] || null;
+    if (!league || !league.name || (league.name as string).startsWith('League ')) {
+      try {
+        const bsdLeague = await bsdClient.fetchWithRetryPublic<any>(`leagues/${leagueId}/`);
+        if (bsdLeague && bsdLeague.name) {
+          await safeExecute(
+            `INSERT INTO leagues (id, name, country, logo_url, is_active, synced_at) VALUES (?, ?, ?, ?, 1, datetime('now'))
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name, country=excluded.country, synced_at=datetime('now')`,
+            [leagueId, bsdLeague.name, bsdLeague.country || null, bsdClient.getLeagueLogoUrl(leagueId)]
+          );
+          league = { ...league, name: bsdLeague.name, country: bsdLeague.country };
+        }
+      } catch {}
+    }
 
-    // ── Event Lineups ──────────────────────────────────────────────────
-    const lineupResult = await db.execute({
-      sql: `SELECT * FROM event_lineups WHERE event_id = ?`,
-      args: [eventId],
-    });
+    // Odds (fetch from BSD if missing)
+    let oddsResult = await db.execute({ sql: `SELECT * FROM event_odds WHERE event_id = ?`, args: [eventId] });
+    if (oddsResult.rows.length === 0) {
+      try {
+        const bsdOdds = await bsdClient.fetchEventOdds(eventId);
+        if (bsdOdds && bsdOdds.odds) {
+          const o = bsdOdds.odds;
+          await safeExecute(
+            `INSERT INTO event_odds (event_id, home_win, draw, away_win, over_15_goals, over_25_goals, over_35_goals, under_15_goals, under_25_goals, under_35_goals, btts_yes, btts_no, synced_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(event_id) DO UPDATE SET home_win=excluded.home_win, draw=excluded.draw, away_win=excluded.away_win, over_25_goals=excluded.over_25_goals, btts_yes=excluded.btts_yes, synced_at=datetime('now')`,
+            [eventId, o.home_win, o.draw, o.away_win, o.over_15_goals, o.over_25_goals, o.over_35_goals, o.under_15_goals, o.under_25_goals, o.under_35_goals, o.btts_yes, o.btts_no]
+          );
+          oddsResult = await db.execute({ sql: `SELECT * FROM event_odds WHERE event_id = ?`, args: [eventId] });
+        }
+      } catch {}
+    }
 
-    // ── Event Stats ────────────────────────────────────────────────────
-    const statsResult = await db.execute({
-      sql: `SELECT * FROM event_stats WHERE event_id = ?`,
-      args: [eventId],
-    });
+    // Lineups (fetch from BSD if missing)
+    let lineupResult = await db.execute({ sql: `SELECT * FROM event_lineups WHERE event_id = ?`, args: [eventId] });
+    if (lineupResult.rows.length === 0) {
+      try {
+        const bsdLu = await bsdClient.fetchEventLineups(eventId);
+        if (bsdLu && bsdLu.lineup_status && bsdLu.lineup_status !== 'unavailable') {
+          const home = bsdLu.lineups?.home || {};
+          const away = bsdLu.lineups?.away || {};
+          await safeExecute(
+            `INSERT INTO event_lineups (event_id, lineup_status, home_formation, away_formation, home_confidence, away_confidence, home_players_json, away_players_json, home_unavailable_json, away_unavailable_json, synced_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(event_id) DO UPDATE SET lineup_status=excluded.lineup_status, home_formation=excluded.home_formation, away_formation=excluded.away_formation, home_players_json=excluded.home_players_json, away_players_json=excluded.away_players_json, synced_at=datetime('now')`,
+            [eventId, bsdLu.lineup_status, home.formation || null, away.formation || null, home.confidence ?? null, away.confidence ?? null, JSON.stringify(home.players || []), JSON.stringify(away.players || []), JSON.stringify(bsdLu.unavailable_players?.home || []), JSON.stringify(bsdLu.unavailable_players?.away || [])]
+          );
+          lineupResult = await db.execute({ sql: `SELECT * FROM event_lineups WHERE event_id = ?`, args: [eventId] });
+        }
+      } catch {}
+    }
+
+    // Stats (fetch from BSD if missing AND match is finished/live)
+    let statsResult = await db.execute({ sql: `SELECT * FROM event_stats WHERE event_id = ?`, args: [eventId] });
+    const evStatus = (event.status as string || '').toLowerCase();
+    if (statsResult.rows.length === 0 && (evStatus === 'finished' || evStatus === 'inprogress' || evStatus === 'ft')) {
+      try {
+        const bsdStats = await bsdClient.fetchEventStats(eventId);
+        if (bsdStats && bsdStats.stats) {
+          const h = bsdStats.stats.home || {};
+          const a = bsdStats.stats.away || {};
+          await safeExecute(
+            `INSERT INTO event_stats (event_id, home_total_shots, away_total_shots, home_shots_on_target, away_shots_on_target, home_ball_possession, away_ball_possession, home_xg, away_xg, home_corners, away_corners, home_fouls, away_fouls, home_yellow_cards, away_yellow_cards, home_red_cards, away_red_cards, home_pass_accuracy, away_pass_accuracy, synced_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(event_id) DO UPDATE SET home_total_shots=excluded.home_total_shots, away_total_shots=excluded.away_total_shots, home_ball_possession=excluded.home_ball_possession, away_ball_possession=excluded.away_ball_possession, home_xg=excluded.home_xg, away_xg=excluded.away_xg, synced_at=datetime('now')`,
+            [eventId, h.total_shots||0, a.total_shots||0, h.shots_on_target||0, a.shots_on_target||0, h.ball_possession||0, a.ball_possession||0, h.xg?.actual||0, a.xg?.actual||0, h.corners||0, a.corners||0, h.fouls||0, a.fouls||0, h.yellow_cards||0, a.yellow_cards||0, h.red_cards||0, a.red_cards||0, h.pass_accuracy_pct||0, a.pass_accuracy_pct||0]
+          );
+          statsResult = await db.execute({ sql: `SELECT * FROM event_stats WHERE event_id = ?`, args: [eventId] });
+        }
+      } catch {}
+    }
 
     // ── H2H Data (last 10 meetings) ────────────────────────────────────
     // Prefer the local events table when populated. When the BSD sync's

@@ -96,7 +96,10 @@ export async function GET(request: NextRequest) {
                 await db.execute({
                   sql: `INSERT INTO leagues (id, name, country, logo_url, is_active, synced_at)
                         VALUES (?, ?, ?, ?, 1, datetime('now'))
-                        ON CONFLICT(id) DO UPDATE SET name = excluded.name, synced_at = datetime('now')`,
+                        ON CONFLICT(id) DO UPDATE SET
+                          name = CASE WHEN excluded.name NOT LIKE 'League %' THEN excluded.name ELSE leagues.name END,
+                          logo_url = COALESCE(excluded.logo_url, leagues.logo_url),
+                          synced_at = datetime('now')`,
                   args: [e.league_id, e.league_name || `League ${e.league_id}`, e.league_country ?? null, bsdClient.getLeagueLogoUrl(e.league_id)],
                 }).catch(() => {});
               }
