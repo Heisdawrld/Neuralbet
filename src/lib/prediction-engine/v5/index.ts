@@ -23,6 +23,7 @@ import { calibrateProbabilities } from './math/calibration';
 import { applyDerbyToVolatility, applyDerbyToProbs } from './intelligence/derby';
 import { applyManagerDebutToProbs } from './intelligence/manager-debut';
 import { applyRestDayToXg } from './intelligence/rest-day';
+import { applyWeatherStyleToXg } from './intelligence/weather-style';
 import { estimateExpectedGoals } from './xg';
 import { classifyMatchScript } from './script';
 import {
@@ -406,9 +407,13 @@ async function preparePredictionContext(fixtureId: number): Promise<{
   const awayTeamName = String(event.away_team);
 
   // Parallel load all data
+  const homeCoachId = event.home_coach_id ? Number(event.home_coach_id) : null;
+  const awayCoachId = event.away_coach_id ? Number(event.away_coach_id) : null;
+
   const [
     oddsRow, leagueRow, homeTeamRow, awayTeamRow,
     homeStandings, awayStandings, h2hMatches,
+    homeManagerRow, awayManagerRow,
   ] = await Promise.all([
     db.execute({ sql: `SELECT * FROM event_odds WHERE event_id = ?`, args: [fixtureId] }),
     db.execute({ sql: `SELECT * FROM leagues WHERE id = ?`, args: [leagueId] }),
@@ -420,6 +425,12 @@ async function preparePredictionContext(fixtureId: number): Promise<{
       sql: `SELECT * FROM historical_matches WHERE fixture_id = ? AND type = 'h2h' ORDER BY date DESC LIMIT 10`,
       args: [fixtureId],
     }),
+    homeCoachId
+      ? db.execute({ sql: `SELECT * FROM managers WHERE id = ?`, args: [homeCoachId] })
+      : Promise.resolve({ rows: [] as any[] }),
+    awayCoachId
+      ? db.execute({ sql: `SELECT * FROM managers WHERE id = ?`, args: [awayCoachId] })
+      : Promise.resolve({ rows: [] as any[] }),
   ]);
 
   // Build odds object
@@ -538,6 +549,30 @@ async function preparePredictionContext(fixtureId: number): Promise<{
     isLocalDerby: Boolean(event.is_local_derby),
     travelDistanceKm: Number(event.travel_distance_km || 0),
     hasBadWeather: Number(event.weather_code || 0) >= 3,
+    // Weather signals (intelligence/weather-style.ts)
+    weatherCode: Number(event.weather_code || 0),
+    weatherDescription: (event.weather_description as string) || null,
+    weatherWindSpeedKmh: event.weather_wind_speed != null ? Number(event.weather_wind_speed) : null,
+    weatherTemperatureC: event.weather_temperature_c != null ? Number(event.weather_temperature_c) : null,
+    // Managers — built from joined rows above
+    homeManager: homeManagerRow.rows[0] ? {
+      name: homeManagerRow.rows[0].name as string,
+      team_style: (homeManagerRow.rows[0].team_style as string) || undefined,
+      tactical_styles: undefined,  // BSD tactical_styles requires a separate sync; not wired yet
+      win_pct: Number(homeManagerRow.rows[0].win_pct || 0),
+      over_25_pct: Number(homeManagerRow.rows[0].over_25_pct || 0),
+      btts_pct: Number(homeManagerRow.rows[0].btts_pct || 0),
+      clean_sheet_pct: Number(homeManagerRow.rows[0].clean_sheet_pct || 0),
+    } : undefined,
+    awayManager: awayManagerRow.rows[0] ? {
+      name: awayManagerRow.rows[0].name as string,
+      team_style: (awayManagerRow.rows[0].team_style as string) || undefined,
+      tactical_styles: undefined,
+      win_pct: Number(awayManagerRow.rows[0].win_pct || 0),
+      over_25_pct: Number(awayManagerRow.rows[0].over_25_pct || 0),
+      btts_pct: Number(awayManagerRow.rows[0].btts_pct || 0),
+      clean_sheet_pct: Number(awayManagerRow.rows[0].clean_sheet_pct || 0),
+    } : undefined,
   };
 
   return { fixtureId, homeTeamName, awayTeamName, features, odds };
@@ -554,11 +589,14 @@ function runProbabilityPipeline(features: FeatureVector, script: ScriptOutput): 
 } {
   const xg = estimateExpectedGoals(features, script);
   // Rest-day asymmetry — penalises the fatigued side's xG (post-Poisson).
-  // Applied here so the score-matrix below sees the corrected xG.
   const rested = applyRestDayToXg(xg.homeExpectedGoals, xg.awayExpectedGoals, features);
   xg.homeExpectedGoals = rested.homeXg;
   xg.awayExpectedGoals = rested.awayXg;
-  xg.totalExpectedGoals = parseFloat((rested.homeXg + rested.awayXg).toFixed(3));
+  // Weather × style interaction — possession teams suffer in rain etc.
+  const weathered = applyWeatherStyleToXg(xg.homeExpectedGoals, xg.awayExpectedGoals, features);
+  xg.homeExpectedGoals = weathered.homeXg;
+  xg.awayExpectedGoals = weathered.awayXg;
+  xg.totalExpectedGoals = parseFloat((weathered.homeXg + weathered.awayXg).toFixed(3));
   const sm = buildScoreMatrix(xg.homeExpectedGoals, xg.awayExpectedGoals);
   const rawProbs = deriveMarketProbabilities(sm);
 

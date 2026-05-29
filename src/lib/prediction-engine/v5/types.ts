@@ -92,6 +92,12 @@ export interface FeatureVector {
   homeRestDays?: number | null;
   awayRestDays?: number | null;
 
+  // Weather signals (intelligence/weather-style.ts)
+  weatherCode?: number | null;
+  weatherDescription?: string | null;
+  weatherWindSpeedKmh?: number | null;
+  weatherTemperatureC?: number | null;
+
   // Referee profile
   refereeAvgGoals: number | null;
   refereeAvgCards: number | null;
