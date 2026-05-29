@@ -24,7 +24,7 @@ dist/
 *.db-shm
 *.db-wal
 *.sqlite
-db/
+/db/
 
 # Logs
 *.log
