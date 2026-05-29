@@ -338,10 +338,16 @@ describe('Layer 11: applyDeepBsdSignals', () => {
 // Layer 12: Context
 // ─────────────────────────────────────────────────────────────────────
 describe('Layer 12: applyBsdContextAdjustments', () => {
-  it('derby → both sides -3%', () => {
-    const result = applyBsdContextAdjustments(1.5, 1.5, { ...baseFv(), isLocalDerby: true });
-    expect(result.homeXg).toBeCloseTo(1.5 * DERBY_DAMPENER, 3);
-    expect(result.awayXg).toBeCloseTo(1.5 * DERBY_DAMPENER, 3);
+  it('derby → goals dampened (intensity-aware via intelligence/derby)', () => {
+    // After Phase 2.1: derby goes through intensity-scaled dampener.
+    // Baseline (no context signals) ~= -8%, fierce derby up to ~-13.5%.
+    // We just assert that derby dampens MORE than the old flat -3%.
+    const noDerby = applyBsdContextAdjustments(1.5, 1.5, { ...baseFv(), isLocalDerby: false });
+    const withDerby = applyBsdContextAdjustments(1.5, 1.5, { ...baseFv(), isLocalDerby: true });
+    expect(noDerby.homeXg).toBe(1.5);
+    expect(withDerby.homeXg).toBeLessThan(1.5 * 0.95);  // at least -5%
+    expect(withDerby.awayXg).toBeLessThan(1.5 * 0.95);
+    expect(withDerby.homeXg).toBeGreaterThan(1.5 * 0.85); // no more than -15%
   });
   it('long-haul travel only dampens AWAY side', () => {
     const result = applyBsdContextAdjustments(1.5, 1.5, { ...baseFv(), travelDistanceKm: 2500 });

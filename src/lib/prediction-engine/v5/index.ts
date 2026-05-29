@@ -20,6 +20,7 @@ import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
 import { initializeDatabase } from '@/lib/db/schema';
 import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from './math/poisson';
 import { calibrateProbabilities } from './math/calibration';
+import { applyDerbyToVolatility, applyDerbyToProbs } from './intelligence/derby';
 import { estimateExpectedGoals } from './xg';
 import { classifyMatchScript } from './script';
 import {
@@ -561,7 +562,9 @@ function runProbabilityPipeline(features: FeatureVector, script: ScriptOutput): 
     impliedBttsYes: features.impliedBttsYes,
   };
 
-  const calibratedProbs = calibrateProbabilities(rawProbs, script, impliedOdds);
+  let calibratedProbs = calibrateProbabilities(rawProbs, script, impliedOdds);
+  // Derby post-step: tilt bttsYes upward (research-backed).
+  calibratedProbs = applyDerbyToProbs(calibratedProbs, features);
   return { xg, calibratedProbs, rawProbs };
 }
 
@@ -739,6 +742,13 @@ export async function runV5Prediction(fixtureId: number): Promise<PredictionResu
       engineVersion: '5.0.0',
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  // Derby pre-step: bump matchChaosScore so the classifier knows
+  // derbies are more upset-prone than form alone suggests.
+  if (ctx.features?.isLocalDerby) {
+    const boostedChaos = applyDerbyToVolatility(ctx.features);
+    ctx.features.matchChaosScore = boostedChaos;
   }
 
   // Classify match script

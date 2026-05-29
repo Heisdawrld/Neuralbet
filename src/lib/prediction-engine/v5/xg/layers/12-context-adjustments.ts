@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { safeNum, type XgPair } from '../shared';
+import { applyDerbyToXg } from '../../intelligence/derby';
 
 export const DERBY_DAMPENER = 0.97;
 export const TRAVEL_LONG_DISTANCE_KM = 2000;
@@ -28,9 +29,12 @@ export const STRICT_REFEREE_DAMPENER = 0.98;
 export function applyBsdContextAdjustments(homeXg: number, awayXg: number, fv: any): XgPair {
   let h = homeXg, a = awayXg;
 
+  // Derby refinement: intensity-aware, replaces the legacy flat -3% dampener.
+  // See src/lib/prediction-engine/v5/intelligence/derby.ts for the math.
   if (fv.isLocalDerby) {
-    h *= DERBY_DAMPENER;
-    a *= DERBY_DAMPENER;
+    const derbyAdjusted = applyDerbyToXg(h, a, fv);
+    h = derbyAdjusted.homeXg;
+    a = derbyAdjusted.awayXg;
   }
 
   if (fv.travelDistanceKm && fv.travelDistanceKm >= TRAVEL_MEDIUM_DISTANCE_KM) {
