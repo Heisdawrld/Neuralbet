@@ -64,11 +64,9 @@ async function handleSync(request: NextRequest) {
     }
 
     else if (step === '3') {
-      // Lineups + managers + referees
+      // Lineups only — managers/referees available via step=5
       const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 20`);
       try { results.lineups = await syncLineups(eventIds); } catch (e: any) { results.errors.push(e.message); }
-      try { results.managers = await syncManagers(); } catch (e: any) { results.errors.push(e.message); }
-      try { results.referees = await syncReferees(); } catch (e: any) { results.errors.push(e.message); }
     }
 
     else if (step === '4') {
@@ -80,8 +78,14 @@ async function handleSync(request: NextRequest) {
       try { const v = await verifyAllPendingResults(); results.verification = { verified: v.verified, wins: v.accuracy.wins, losses: v.accuracy.losses, hitRate: v.accuracy.hitRate, avgBrier: v.accuracy.avgBrier }; } catch (e: any) { results.errors.push(e.message); }
     }
 
+    else if (step === '5') {
+      // Managers + referees (optional enrichment)
+      try { results.managers = await syncManagers(); } catch (e: any) { results.errors.push(e.message); }
+      try { results.referees = await syncReferees(); } catch (e: any) { results.errors.push(e.message); }
+    }
+
     results.duration = `${((Date.now() - start) / 1000).toFixed(1)}s`;
-    results.nextStep = step === '1' ? '2' : step === '2' ? '3' : step === '3' ? '4' : 'done';
+    results.nextStep = step === '1' ? '2' : step === '2' ? '3' : step === '3' ? '4' : step === '4' ? '5' : 'done';
     results.success = true;
     results.timestamp = new Date().toISOString();
 
