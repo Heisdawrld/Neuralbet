@@ -1,14 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NeuralBet — V5 Sync API (Step-based to avoid Vercel 60s timeout)
+// NeuralBet — V5 Sync API (Lightweight steps for Vercel 60s limit)
 //
-// GET /api/v5/sync?step=1   — Events + Leagues + Standings
-// GET /api/v5/sync?step=2   — Odds + Lineups + Managers + Referees
-// GET /api/v5/sync?step=3   — Stats + Polymarket + H2H + Verify
-// GET /api/v5/sync?step=all — Run everything (may timeout on hobby)
-// GET /api/v5/sync           — Same as step=1 (safest default)
-// POST also supported.
-//
-// Call steps 1→2→3 sequentially to do a full sync within limits.
+// GET /api/v5/sync?step=1  — Events + Leagues (fast, ~10s)
+// GET /api/v5/sync?step=2  — Standings + Odds for upcoming (medium, ~30s)
+// GET /api/v5/sync?step=3  — Lineups + Managers + Referees (medium, ~25s)
+// GET /api/v5/sync?step=4  — H2H + Verify + Cache cleanup (medium, ~20s)
+// GET /api/v5/sync          — Runs step 1 (safest default)
 // ═══════════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -22,184 +19,77 @@ import {
   syncLineups,
   syncManagers,
   syncReferees,
-  syncEventStats,
-  syncPolymarket,
 } from '@/lib/db/sync-engine';
 import { syncH2HForUpcomingFixtures } from '@/lib/db/sync-h2h';
 import { verifyAllPendingResults } from '@/lib/prediction-engine/v5/results/verify';
-import { getTursoClient, safeExecute } from '@/lib/db/turso-client';
+import { safeExecute } from '@/lib/db/turso-client';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 let dbReady = false;
 async function ensureDb(): Promise<void> {
-  if (!dbReady) {
-    await initializeDatabase();
-    dbReady = true;
-  }
+  if (!dbReady) { await initializeDatabase(); dbReady = true; }
 }
 
-// ── Helpers to get event/league IDs from DB ─────────────────────────
-
-async function getUpcomingEventIds(): Promise<number[]> {
+async function getIds(query: string): Promise<number[]> {
   try {
-    const r = await safeExecute(
-      `SELECT id FROM events WHERE status = 'notstarted' ORDER BY event_date ASC LIMIT 80`,
-      []
-    );
-    return (r.rows || []).map((row: any) => Number(row.id)).filter(Boolean);
+    const r = await safeExecute(query, []);
+    return (r.rows || []).map((row: any) => Number(row.id || row.league_id)).filter(Boolean);
   } catch { return []; }
 }
-
-async function getLeagueIds(): Promise<number[]> {
-  try {
-    const r = await safeExecute(
-      `SELECT DISTINCT league_id FROM events WHERE status = 'notstarted' LIMIT 30`,
-      []
-    );
-    return (r.rows || []).map((row: any) => Number(row.league_id)).filter(Boolean);
-  } catch { return []; }
-}
-
-async function getFinishedEventIds(): Promise<number[]> {
-  try {
-    const r = await safeExecute(
-      `SELECT id FROM events WHERE status IN ('finished','FT','AET','PEN') ORDER BY event_date DESC LIMIT 80`,
-      []
-    );
-    return (r.rows || []).map((row: any) => Number(row.id)).filter(Boolean);
-  } catch { return []; }
-}
-
-// ── Step runners ────────────────────────────────────────────────────
-
-async function runStep1() {
-  const results: Record<string, any> = { step: 1, errors: [] };
-
-  try { results.events = await syncEvents('notstarted', 100); }
-  catch (e: any) { results.errors.push(`Events: ${e.message}`); }
-
-  try { results.finishedEvents = await syncFinishedEvents(3); }
-  catch (e: any) { results.errors.push(`Finished: ${e.message}`); }
-
-  try { results.leagues = await syncLeagues(); }
-  catch (e: any) { results.errors.push(`Leagues: ${e.message}`); }
-
-  // Clean stale 0-0 scores (BUG #11 cleanup)
-  try {
-    await safeExecute(
-      `UPDATE events SET home_score = NULL, away_score = NULL
-       WHERE status = 'notstarted' AND home_score = 0 AND away_score = 0`,
-      []
-    );
-  } catch {}
-
-  return results;
-}
-
-async function runStep2() {
-  const results: Record<string, any> = { step: 2, errors: [] };
-  const eventIds = await getUpcomingEventIds();
-  const leagueIds = await getLeagueIds();
-
-  try { results.standings = await syncStandings(leagueIds.slice(0, 10)); }
-  catch (e: any) { results.errors.push(`Standings: ${e.message}`); }
-
-  try { results.odds = await syncOdds(eventIds.slice(0, 30)); }
-  catch (e: any) { results.errors.push(`Odds: ${e.message}`); }
-
-  try { results.lineups = await syncLineups(eventIds.slice(0, 30)); }
-  catch (e: any) { results.errors.push(`Lineups: ${e.message}`); }
-
-  return results;
-}
-
-async function runStep3() {
-  const results: Record<string, any> = { step: 3, errors: [] };
-  const eventIds = await getUpcomingEventIds();
-  const finishedIds = await getFinishedEventIds();
-
-  try { results.managers = await syncManagers(); }
-  catch (e: any) { results.errors.push(`Managers: ${e.message}`); }
-
-  try { results.referees = await syncReferees(); }
-  catch (e: any) { results.errors.push(`Referees: ${e.message}`); }
-
-  try { results.polymarket = await syncPolymarket(eventIds.slice(0, 20)); }
-  catch (e: any) { results.errors.push(`Polymarket: ${e.message}`); }
-
-  try {
-    const h2h = await syncH2HForUpcomingFixtures(3);
-    results.h2h = h2h.h2hRowsWritten;
-  } catch (e: any) { results.errors.push(`H2H: ${e.message}`); }
-
-  // Invalidate stale SKIP predictions so engine re-runs with new data
-  try {
-    const cleared = await safeExecute(
-      `DELETE FROM predictions_v2 WHERE no_safe_pick = 1
-       AND updated_at < datetime('now', '-2 hours')`,
-      []
-    );
-    results.staleSkipsCleared = cleared.rowsAffected || 0;
-  } catch {}
-
-  // Verify finished results
-  try {
-    const v = await verifyAllPendingResults();
-    results.verification = {
-      verified: v.verified,
-      wins: v.accuracy.wins,
-      losses: v.accuracy.losses,
-      hitRate: v.accuracy.hitRate,
-      avgBrier: v.accuracy.avgBrier,
-    };
-  } catch (e: any) { results.errors.push(`Verify: ${e.message}`); }
-
-  return results;
-}
-
-// ── Route handler ───────────────────────────────────────────────────
 
 async function handleSync(request: NextRequest) {
   try {
     await ensureDb();
-    const startTime = Date.now();
+    const start = Date.now();
+    const step = new URL(request.url).searchParams.get('step') || '1';
+    const results: Record<string, any> = { step, errors: [] as string[] };
 
-    const { searchParams } = new URL(request.url);
-    const step = searchParams.get('step') || '1';
-
-    let results: Record<string, any>;
-
-    if (step === 'all') {
-      const r1 = await runStep1();
-      const r2 = await runStep2();
-      const r3 = await runStep3();
-      results = { step: 'all', ...r1, ...r2, ...r3, errors: [...(r1.errors || []), ...(r2.errors || []), ...(r3.errors || [])] };
-    } else if (step === '2') {
-      results = await runStep2();
-    } else if (step === '3') {
-      results = await runStep3();
-    } else {
-      results = await runStep1();
+    if (step === '1') {
+      // Events + finished + leagues — minimal, fast
+      try { results.events = await syncEvents('notstarted', 50); } catch (e: any) { results.errors.push(e.message); }
+      try { results.finished = await syncFinishedEvents(3); } catch (e: any) { results.errors.push(e.message); }
+      try { results.leagues = await syncLeagues(); } catch (e: any) { results.errors.push(e.message); }
+      // Clean stale 0-0 scores
+      try { await safeExecute(`UPDATE events SET home_score=NULL, away_score=NULL WHERE status='notstarted' AND home_score=0 AND away_score=0`, []); } catch {}
     }
 
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    else if (step === '2') {
+      // Standings (top 8 leagues) + odds (top 20 events)
+      const leagueIds = await getIds(`SELECT DISTINCT league_id FROM events WHERE status='notstarted' LIMIT 8`);
+      const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 20`);
+      try { results.standings = await syncStandings(leagueIds); } catch (e: any) { results.errors.push(e.message); }
+      try { results.odds = await syncOdds(eventIds); } catch (e: any) { results.errors.push(e.message); }
+    }
 
-    return NextResponse.json({
-      success: true,
-      ...results,
-      duration: `${duration}s`,
-      nextStep: step === '1' ? '2' : step === '2' ? '3' : step === '3' ? 'done' : 'done',
-      timestamp: new Date().toISOString(),
-    });
+    else if (step === '3') {
+      // Lineups + managers + referees
+      const eventIds = await getIds(`SELECT id FROM events WHERE status='notstarted' ORDER BY event_date ASC LIMIT 20`);
+      try { results.lineups = await syncLineups(eventIds); } catch (e: any) { results.errors.push(e.message); }
+      try { results.managers = await syncManagers(); } catch (e: any) { results.errors.push(e.message); }
+      try { results.referees = await syncReferees(); } catch (e: any) { results.errors.push(e.message); }
+    }
+
+    else if (step === '4') {
+      // H2H + verify + cache cleanup
+      try { const h = await syncH2HForUpcomingFixtures(3); results.h2h = h.h2hRowsWritten; } catch (e: any) { results.errors.push(e.message); }
+      // Clear stale SKIP predictions
+      try { const c = await safeExecute(`DELETE FROM predictions_v2 WHERE no_safe_pick=1 AND updated_at < datetime('now','-2 hours')`, []); results.skipsCleared = c.rowsAffected || 0; } catch {}
+      // Verify
+      try { const v = await verifyAllPendingResults(); results.verification = { verified: v.verified, wins: v.accuracy.wins, losses: v.accuracy.losses, hitRate: v.accuracy.hitRate, avgBrier: v.accuracy.avgBrier }; } catch (e: any) { results.errors.push(e.message); }
+    }
+
+    results.duration = `${((Date.now() - start) / 1000).toFixed(1)}s`;
+    results.nextStep = step === '1' ? '2' : step === '2' ? '3' : step === '3' ? '4' : 'done';
+    results.success = true;
+    results.timestamp = new Date().toISOString();
+
+    return NextResponse.json(results);
   } catch (error: any) {
-    console.error('[V5 Sync] Error:', error);
-    return NextResponse.json(
-      { error: 'Sync failed', details: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Sync failed', details: error.message }, { status: 500 });
   }
 }
 
-export async function GET(request: NextRequest) { return handleSync(request); }
-export async function POST(request: NextRequest) { return handleSync(request); }
+export async function GET(req: NextRequest) { return handleSync(req); }
+export async function POST(req: NextRequest) { return handleSync(req); }
