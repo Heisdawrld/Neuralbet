@@ -21,6 +21,7 @@ import { initializeDatabase } from '@/lib/db/schema';
 import { buildScoreMatrix, deriveMarketProbabilities, type ScoreMatrix } from './math/poisson';
 import { calibrateProbabilities } from './math/calibration';
 import { applyDerbyToVolatility, applyDerbyToProbs } from './intelligence/derby';
+import { applyManagerDebutToProbs } from './intelligence/manager-debut';
 import { estimateExpectedGoals } from './xg';
 import { classifyMatchScript } from './script';
 import {
@@ -565,6 +566,8 @@ function runProbabilityPipeline(features: FeatureVector, script: ScriptOutput): 
   let calibratedProbs = calibrateProbabilities(rawProbs, script, impliedOdds);
   // Derby post-step: tilt bttsYes upward (research-backed).
   calibratedProbs = applyDerbyToProbs(calibratedProbs, features);
+  // Manager debut post-step: nudge homeWin up + draw down for first 3 games.
+  calibratedProbs = applyManagerDebutToProbs(calibratedProbs, features);
   return { xg, calibratedProbs, rawProbs };
 }
 

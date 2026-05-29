@@ -82,6 +82,12 @@ export interface FeatureVector {
   awayManagerWinPct: number | null;
   awayManagerOver25Pct: number | null;
 
+  // Manager-debut signals (intelligence/manager-debut.ts)
+  homeManagerMatchesAtClub?: number | null;
+  homeManagerDaysAtClub?: number | null;
+  awayManagerMatchesAtClub?: number | null;
+  awayManagerDaysAtClub?: number | null;
+
   // Referee profile
   refereeAvgGoals: number | null;
   refereeAvgCards: number | null;

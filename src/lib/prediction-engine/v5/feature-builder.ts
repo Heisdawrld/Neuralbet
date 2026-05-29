@@ -160,12 +160,40 @@ export async function buildFeatureVector(fixtureId: number): Promise<FeatureVect
   let awayManagerWinPct: number | null = null;
   let awayManagerOver25Pct: number | null = null;
 
+  // Manager-debut signals: how new is each side's manager at THIS club?
+  let homeManagerMatchesAtClub: number | null = null;
+  let homeManagerDaysAtClub: number | null = null;
+  let awayManagerMatchesAtClub: number | null = null;
+  let awayManagerDaysAtClub: number | null = null;
+
+  const homeTeamIdForCareer = Number(event.home_team_id);
+  const awayTeamIdForCareer = Number(event.away_team_id);
+
   if (homeCoachId) {
     const mgrResult = await safeExecute(`SELECT * FROM managers WHERE id = ?`, [homeCoachId]);
     const mgr = mgrResult.rows?.[0];
     if (mgr) {
       homeManagerWinPct = Number(mgr.win_pct || 0);
       homeManagerOver25Pct = Number(mgr.over_25_pct || 0);
+    }
+    // Look up current-tenure record (date_to IS NULL = still active)
+    const tenureResult = await safeExecute(
+      `SELECT date_from, matches FROM manager_career
+       WHERE manager_id = ? AND team_id = ? AND (date_to IS NULL OR date_to = '')
+       ORDER BY date_from DESC LIMIT 1`,
+      [homeCoachId, homeTeamIdForCareer],
+    );
+    const tenure = tenureResult.rows?.[0];
+    if (tenure) {
+      homeManagerMatchesAtClub = Number(tenure.matches || 0);
+      if (tenure.date_from) {
+        const start = new Date(tenure.date_from as string);
+        const now = new Date(event.event_date as string);
+        const diffMs = now.getTime() - start.getTime();
+        if (Number.isFinite(diffMs) && diffMs >= 0) {
+          homeManagerDaysAtClub = Math.floor(diffMs / 86400000);
+        }
+      }
     }
   }
   if (awayCoachId) {
@@ -174,6 +202,24 @@ export async function buildFeatureVector(fixtureId: number): Promise<FeatureVect
     if (mgr) {
       awayManagerWinPct = Number(mgr.win_pct || 0);
       awayManagerOver25Pct = Number(mgr.over_25_pct || 0);
+    }
+    const tenureResult = await safeExecute(
+      `SELECT date_from, matches FROM manager_career
+       WHERE manager_id = ? AND team_id = ? AND (date_to IS NULL OR date_to = '')
+       ORDER BY date_from DESC LIMIT 1`,
+      [awayCoachId, awayTeamIdForCareer],
+    );
+    const tenure = tenureResult.rows?.[0];
+    if (tenure) {
+      awayManagerMatchesAtClub = Number(tenure.matches || 0);
+      if (tenure.date_from) {
+        const start = new Date(tenure.date_from as string);
+        const now = new Date(event.event_date as string);
+        const diffMs = now.getTime() - start.getTime();
+        if (Number.isFinite(diffMs) && diffMs >= 0) {
+          awayManagerDaysAtClub = Math.floor(diffMs / 86400000);
+        }
+      }
     }
   }
 
@@ -300,6 +346,11 @@ export async function buildFeatureVector(fixtureId: number): Promise<FeatureVect
     homeManagerOver25Pct,
     awayManagerWinPct,
     awayManagerOver25Pct,
+    // Manager-debut signals (intelligence/manager-debut.ts)
+    homeManagerMatchesAtClub,
+    homeManagerDaysAtClub,
+    awayManagerMatchesAtClub,
+    awayManagerDaysAtClub,
 
     // Referee
     refereeAvgGoals,
