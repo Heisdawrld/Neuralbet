@@ -41,6 +41,7 @@ import { applyDeepBsdSignals } from './layers/11-deep-bsd-signals';
 import { applyBsdContextAdjustments } from './layers/12-context-adjustments';
 import { applySquadManagementAdjustments } from './layers/13-squad-management';
 import { capXg, type CappedXg } from './layers/14-cap';
+import { applyNeuralAdjustment } from './layers/15-neural-adjustment';
 
 export type { CappedXg };
 
@@ -65,7 +66,15 @@ export function estimateExpectedGoals(fv: any, script: ScriptOutput): CappedXg {
   ({ homeXg, awayXg } = applyBsdContextAdjustments(homeXg, awayXg, fv));
   ({ homeXg, awayXg } = applySquadManagementAdjustments(homeXg, awayXg, fv));
 
-  return capXg(homeXg, awayXg, baseHomeXg, baseAwayXg, fv);
+  const capped = capXg(homeXg, awayXg, baseHomeXg, baseAwayXg, fv);
+
+  // Layer 15: Neural network residual adjustment
+  // Apply learned non-linear correction, then re-enforce caps
+  const neural = applyNeuralAdjustment(capped.homeExpectedGoals, capped.awayExpectedGoals, fv);
+  // Re-cap to maintain league-aware invariants after neural adjustment
+  const recapped = capXg(neural.homeXg, neural.awayXg, capped.baseHomeXg, capped.baseAwayXg, fv);
+
+  return recapped;
 }
 
 // Re-export every layer so backtest / ablation code can compose them
@@ -83,3 +92,4 @@ export { applyDeepBsdSignals } from './layers/11-deep-bsd-signals';
 export { applyBsdContextAdjustments } from './layers/12-context-adjustments';
 export { applySquadManagementAdjustments } from './layers/13-squad-management';
 export { capXg, getLeagueCapTier } from './layers/14-cap';
+export { applyNeuralAdjustment, neuralForward, extractNeuralFeatures, NEURAL_LAYER_META } from './layers/15-neural-adjustment';

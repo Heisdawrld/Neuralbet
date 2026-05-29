@@ -128,8 +128,10 @@ export function Bankroll() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <DollarSign className="w-6 h-6 text-emerald-400" />
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <DollarSign className="w-5 h-5 text-emerald-400" />
+            </div>
             Bankroll Tracker
           </h1>
           <p className="text-sm text-muted-foreground mt-1">

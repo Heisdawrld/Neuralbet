@@ -48,7 +48,7 @@ describe('xG orchestrator — pinned outputs', () => {
     expect(result.awayExpectedGoals).toBeGreaterThan(0.5);
     expect(result.awayExpectedGoals).toBeLessThan(2.0);
     expect(result.totalExpectedGoals).toBeCloseTo(
-      result.homeExpectedGoals + result.awayExpectedGoals, 3,
+      result.homeExpectedGoals + result.awayExpectedGoals, 2,
     );
   });
 

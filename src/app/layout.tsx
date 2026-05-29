@@ -15,10 +15,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NeuralBet — AI Football Predictions",
-  description: "Premium AI-powered football predictions, value bets, and live match analytics. Advanced ML models with real-time odds analysis.",
+  title: "NeuralBet — Football Prediction Model",
+  description: "Statistical football prediction model with a 15-layer xG pipeline, neural net adjustment, 7 intelligence modules, and backtest-gated accuracy. 30+ markets. Kelly-optimal staking.",
+  keywords: ["football predictions", "statistical model", "xG", "expected goals", "value bets", "football analytics"],
+  authors: [{ name: "NeuralBet", url: "https://github.com/Heisdawrld/Neuralbet" }],
+  openGraph: {
+    title: "NeuralBet — Football Prediction Model",
+    description: "15-layer xG pipeline. Neural net. 7 intelligence modules. 30+ markets.",
+    type: "website",
+    siteName: "NeuralBet",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NeuralBet — Football Prediction Model",
+    description: "15-layer xG pipeline. Neural net. 7 intelligence modules. 30+ markets.",
+  },
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>",
+    icon: '/icon-192.png',
+  },
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'NeuralBet',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
 };
 

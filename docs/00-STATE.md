@@ -2,15 +2,15 @@
 
 > Single source of truth across sessions. Updated end of every working session.
 
-## Current Snapshot — 2026-05-29 (Phase 2.9 LIVE — engine has 7 active intelligence modules)
+## Current Snapshot — 2026-05-29 (Phase 3 COMPLETE — strict TS + CI + 10 bugs fixed + full documentation)
 
 **Status**: V5 engine has **7 live football-intelligence modules**, all flag-gated and ablation-ready. H2H sync wired and populating. Match panel + predictions tab serve V5 via adapters. 24 commits on main since Phase 0.
 **Live URL**: https://neuralbet-lovat.vercel.app
-**Tests**: **467 passing in 5.39s**
+**Tests**: **467 passing in 5.39s** (CI-gated)
 **Engine canon**: `src/lib/prediction-engine/v5/`
 **API surface**: 11 routes
 **Lines of test code**: ~2,500 across 25 test files
-**Silent bugs caught + fixed**: **8** across the rebuild
+**Silent bugs caught + fixed**: **10** across the rebuild
 
 ## Live intelligence modules
 
