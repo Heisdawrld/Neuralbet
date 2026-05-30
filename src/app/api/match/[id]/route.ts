@@ -125,6 +125,61 @@ export async function GET(
       } catch {}
     }
 
+    // Metadata (fetch from BSD if missing — funfacts + preview)
+    let metadataResult = await db.execute({ sql: `SELECT * FROM event_metadata WHERE event_id = ?`, args: [eventId] });
+    if (metadataResult.rows.length === 0) {
+      try {
+        const bsdMeta = await bsdClient.fetchEventMetadata(eventId);
+        if (bsdMeta) {
+          await safeExecute(
+            `INSERT INTO event_metadata (event_id, funfacts_json, ai_preview_text, synced_at)
+             VALUES (?, ?, ?, datetime('now'))
+             ON CONFLICT(event_id) DO UPDATE SET funfacts_json=excluded.funfacts_json, ai_preview_text=excluded.ai_preview_text, synced_at=datetime('now')`,
+            [eventId, JSON.stringify(bsdMeta.funfacts || []), bsdMeta.ai_preview?.text || null]
+          );
+          metadataResult = await db.execute({ sql: `SELECT * FROM event_metadata WHERE event_id = ?`, args: [eventId] });
+        }
+      } catch {}
+    }
+
+    // Venue (fetch from BSD if event has venue_id but venues table empty)
+    const venueId = event.venue_id ? Number(event.venue_id) : null;
+    if (venueId) {
+      try {
+        const venueCheck = await db.execute({ sql: `SELECT id FROM venues WHERE id = ?`, args: [venueId] });
+        if (venueCheck.rows.length === 0) {
+          const bsdVenue = await bsdClient.fetchVenue(venueId);
+          if (bsdVenue) {
+            await safeExecute(
+              `INSERT INTO venues (id, name, city, country, capacity, latitude, longitude, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(id) DO UPDATE SET name=excluded.name, city=excluded.city, capacity=excluded.capacity, synced_at=datetime('now')`,
+              [venueId, bsdVenue.name, bsdVenue.city || null, bsdVenue.country || null, bsdVenue.capacity || null, bsdVenue.latitude || null, bsdVenue.longitude || null]
+            );
+          }
+        }
+      } catch {}
+    }
+
+    // Referee (fetch from BSD if event has referee_id but referees table empty)
+    const refId = event.referee_id ? Number(event.referee_id) : null;
+    if (refId) {
+      try {
+        const refCheck = await db.execute({ sql: `SELECT id FROM referees WHERE id = ?`, args: [refId] });
+        if (refCheck.rows.length === 0) {
+          const bsdRef = await bsdClient.fetchReferee(refId);
+          if (bsdRef) {
+            await safeExecute(
+              `INSERT INTO referees (id, name, country, avg_yellow_per_match, avg_red_per_match, avg_goals_per_match, avg_fouls_per_match, career_games, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(id) DO UPDATE SET avg_yellow_per_match=excluded.avg_yellow_per_match, avg_goals_per_match=excluded.avg_goals_per_match, synced_at=datetime('now')`,
+              [refId, bsdRef.name, bsdRef.country || null, bsdRef.avg_yellow_per_match || 0, bsdRef.avg_red_per_match || 0, bsdRef.avg_goals_per_match || 0, bsdRef.avg_fouls_per_match || 0, bsdRef.matches || 0]
+            );
+          }
+        }
+      } catch {}
+    }
+
     // ── H2H Data (last 10 meetings) ────────────────────────────────────
     // Prefer the local events table when populated. When the BSD sync's
     // forward window doesn't include past meetings (typical for newly-
@@ -274,11 +329,7 @@ export async function GET(
       args: [eventId],
     });
 
-    // ── Event Metadata ─────────────────────────────────────────────────
-    const metadataResult = await db.execute({
-      sql: `SELECT * FROM event_metadata WHERE event_id = ?`,
-      args: [eventId],
-    });
+    // ── Event Metadata (already loaded above via on-demand enrichment) ──
 
     // ── Engine Prediction (V5 engine, adapted to v4 PunterTip shape for frontend compat) ────────
     let enginePrediction: import("@/lib/prediction-engine/v5/adapters/punter-tip").PunterTipV4 | null = null;

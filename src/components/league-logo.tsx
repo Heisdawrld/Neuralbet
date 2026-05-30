@@ -35,7 +35,7 @@ export function LeagueLogo({ leagueId, name, src, size = 'sm', className }: Leag
 
   // Resolution priority: src prop → leagueId-based URL → Shield fallback
   const effectiveSrc = src && src.trim() ? src : null;
-  const finalSrc = effectiveSrc || (leagueId ? `https://sports.bzzoiroiro.com/img/league/${leagueId}/` : null);
+  const finalSrc = effectiveSrc || (leagueId ? `https://sports.bzzoiro.com/img/league/${leagueId}/` : null);
   const finalAlt = name || 'League Badge';
 
   const baseClasses = cn(

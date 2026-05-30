@@ -38,7 +38,7 @@ export function TeamLogo({ teamId, name, src, size = 'md', className }: TeamLogo
 
   // Resolution priority: src prop → teamId-based URL → Shield fallback
   const effectiveSrc = src && src.trim() ? src : null;
-  const finalSrc = effectiveSrc || (teamId ? `https://sports.bzzoiroiro.com/img/team/${teamId}/` : null);
+  const finalSrc = effectiveSrc || (teamId ? `https://sports.bzzoiro.com/img/team/${teamId}/` : null);
   const finalAlt = name || 'Team Logo';
 
   const baseClasses = cn(

@@ -117,6 +117,35 @@ interface MatchDetailResponse {
     form: string | null;
   } | null;
   enginePrediction: PunterTipV4Data | null;
+  homeManager: {
+    id: number; name: string; tacticalProfile: string | null;
+    preferredFormation: string | null; winPct: number;
+    avgGoalsScored: number; avgGoalsConceded: number;
+    avgPossession: number; cleanSheetPct: number;
+    bttsPct: number; over25Pct: number;
+  } | null;
+  awayManager: {
+    id: number; name: string; tacticalProfile: string | null;
+    preferredFormation: string | null; winPct: number;
+    avgGoalsScored: number; avgGoalsConceded: number;
+    avgPossession: number; cleanSheetPct: number;
+    bttsPct: number; over25Pct: number;
+  } | null;
+  referee: {
+    id: number; name: string; country: string | null;
+    avgYellowPerMatch: number; avgRedPerMatch: number;
+    avgGoalsPerMatch: number; avgFoulsPerMatch: number;
+    careerGames: number;
+  } | null;
+  metadata: {
+    funfacts: Array<{ sentence: string }> | null;
+    aiPreview: string | null;
+  } | null;
+  incidents: Array<{
+    incidentType: string; minute: number | null;
+    playerName: string | null; isHome: boolean;
+    cardType: string | null; playerIn: string | null; playerOut: string | null;
+  }>;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -422,6 +451,66 @@ function PredictionTab({ data }: { data: MatchDetailResponse }) {
             {pred.analysis.situation.isDerby && <IntelBadge icon={<Flame className="w-3 h-3" />} label="Derby" color="orange" />}
             {pred.analysis.situation.weatherNote && <IntelBadge icon={<CloudRain className="w-3 h-3" />} label={pred.analysis.situation.weatherNote} color="blue" />}
             {pred.analysis.situation.fatigueNote && <IntelBadge icon={<Moon className="w-3 h-3" />} label={pred.analysis.situation.fatigueNote} color="amber" />}
+          </div>
+        </Section>
+      )}
+
+      {/* Pre-match Facts */}
+      {data.metadata?.funfacts && data.metadata.funfacts.length > 0 && (
+        <Section title="Pre-Match Facts" icon={<Brain className="w-4 h-4 text-amber-400" />}>
+          <div className="space-y-2">
+            {data.metadata.funfacts.map((f: any, i: number) => (
+              <p key={i} className="text-[12px] text-slate-300 leading-relaxed flex items-start gap-2">
+                <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                {typeof f === 'string' ? f : f.sentence}
+              </p>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Managers */}
+      {(data.homeManager || data.awayManager) && (
+        <Section title="Managers" icon={<Users className="w-4 h-4 text-cyan-400" />}>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: data.event.homeTeam, mgr: data.homeManager },
+              { label: data.event.awayTeam, mgr: data.awayManager },
+            ].map(({ label, mgr }) => (
+              <div key={label} className="rounded-xl bg-white/[0.025] border border-white/[0.05] p-3">
+                <p className="text-[10px] text-slate-500 mb-1">{label}</p>
+                {mgr ? (
+                  <>
+                    <p className="text-sm font-medium text-white">{mgr.name}</p>
+                    <p className="text-[10px] text-cyan-400 capitalize">{mgr.tacticalProfile} · {mgr.preferredFormation}</p>
+                    <div className="grid grid-cols-3 gap-1 mt-2 text-center">
+                      <div><p className="text-xs font-mono font-bold text-emerald-400">{mgr.winPct}%</p><p className="text-[8px] text-slate-500">Win</p></div>
+                      <div><p className="text-xs font-mono font-bold text-cyan-400">{mgr.over25Pct}%</p><p className="text-[8px] text-slate-500">O2.5</p></div>
+                      <div><p className="text-xs font-mono font-bold text-amber-400">{mgr.cleanSheetPct}%</p><p className="text-[8px] text-slate-500">CS</p></div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500">Not available</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Referee */}
+      {data.referee && (
+        <Section title="Referee" icon={<Shield className="w-4 h-4 text-amber-400" />}>
+          <div className="flex items-center gap-4">
+            <div>
+              <p className="text-sm font-medium text-white">{data.referee.name}</p>
+              {data.referee.country && <p className="text-[10px] text-slate-500">{data.referee.country} · {data.referee.careerGames} career games</p>}
+            </div>
+            <div className="ml-auto flex gap-3 text-center">
+              <div><p className="text-sm font-mono font-bold text-amber-400">{data.referee.avgYellowPerMatch.toFixed(1)}</p><p className="text-[8px] text-slate-500">Yellow/g</p></div>
+              <div><p className="text-sm font-mono font-bold text-red-400">{data.referee.avgRedPerMatch.toFixed(2)}</p><p className="text-[8px] text-slate-500">Red/g</p></div>
+              <div><p className="text-sm font-mono font-bold text-emerald-400">{data.referee.avgGoalsPerMatch.toFixed(1)}</p><p className="text-[8px] text-slate-500">Goals/g</p></div>
+            </div>
           </div>
         </Section>
       )}
