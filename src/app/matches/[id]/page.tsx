@@ -105,12 +105,16 @@ interface MatchDetailResponse {
   homeTeamStanding: {
     position: number; teamId: number; teamName: string;
     played: number; won: number; drawn: number; lost: number;
-    gf: number; ga: number; pts: number; form: string | null;
+    gf: number; ga: number; gd: number; pts: number;
+    xgf: number | null; xga: number | null; xgd: number | null;
+    form: string | null;
   } | null;
   awayTeamStanding: {
     position: number; teamId: number; teamName: string;
     played: number; won: number; drawn: number; lost: number;
-    gf: number; ga: number; pts: number; form: string | null;
+    gf: number; ga: number; gd: number; pts: number;
+    xgf: number | null; xga: number | null; xgd: number | null;
+    form: string | null;
   } | null;
   enginePrediction: PunterTipV4Data | null;
 }
@@ -444,43 +448,172 @@ function IntelBadge({ icon, label, color }: { icon: React.ReactNode; label: stri
 // ═══════════════════════════════════════════════════════════════════════
 
 function StatsTab({ data }: { data: MatchDetailResponse }) {
+  const hs = data.homeTeamStanding;
+  const as_ = data.awayTeamStanding;
   const s = data.stats;
-  if (!s) return <EmptyTab icon={<BarChart3 className="w-8 h-8" />} title="No match stats" sub="Stats available during/after the match" />;
+  const pred = data.enginePrediction;
 
-  const rows = [
-    { label: 'Possession', home: `${s.homeBallPossession}%`, away: `${s.awayBallPossession}%`, hVal: s.homeBallPossession, aVal: s.awayBallPossession },
-    { label: 'Total Shots', home: s.homeTotalShots, away: s.awayTotalShots, hVal: s.homeTotalShots, aVal: s.awayTotalShots },
-    { label: 'On Target', home: s.homeShotsOnTarget, away: s.awayShotsOnTarget, hVal: s.homeShotsOnTarget, aVal: s.awayShotsOnTarget },
-    { label: 'xG', home: s.homeXg?.toFixed(2) || '—', away: s.awayXg?.toFixed(2) || '—', hVal: s.homeXg, aVal: s.awayXg },
-    { label: 'Corners', home: s.homeCorners, away: s.awayCorners, hVal: s.homeCorners, aVal: s.awayCorners },
-    { label: 'Fouls', home: s.homeFouls, away: s.awayFouls, hVal: s.homeFouls, aVal: s.awayFouls },
-    { label: 'Yellow Cards', home: s.homeYellowCards, away: s.awayYellowCards, hVal: s.homeYellowCards, aVal: s.awayYellowCards },
-  ];
+  const hasStandings = hs && as_;
+  const hasLiveStats = !!s;
+
+  if (!hasStandings && !hasLiveStats) {
+    return <EmptyTab icon={<BarChart3 className="w-8 h-8" />} title="No stats available" sub="Sync data to populate team statistics" />;
+  }
+
+  // Derived stats from standings
+  const homeGpg = hs ? (hs.gf / Math.max(1, hs.played)).toFixed(2) : '—';
+  const awayGpg = as_ ? (as_.gf / Math.max(1, as_.played)).toFixed(2) : '—';
+  const homeCapg = hs ? (hs.ga / Math.max(1, hs.played)).toFixed(2) : '—';
+  const awayCapg = as_ ? (as_.ga / Math.max(1, as_.played)).toFixed(2) : '—';
+  const homeXgpg = hs?.xgf ? (hs.xgf / Math.max(1, hs.played)).toFixed(2) : '—';
+  const awayXgpg = as_?.xgf ? (as_.xgf / Math.max(1, as_.played)).toFixed(2) : '—';
+  const homeXgApg = hs?.xga ? (hs.xga / Math.max(1, hs.played)).toFixed(2) : '—';
+  const awayXgApg = as_?.xga ? (as_.xga / Math.max(1, as_.played)).toFixed(2) : '—';
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-[#0d1117]/80 overflow-hidden">
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-0 px-4 py-3 border-b border-white/[0.06] text-[10px] text-slate-500 uppercase tracking-wider">
-        <span>{data.event.homeTeam}</span>
-        <span className="text-center px-4">Stat</span>
-        <span className="text-right">{data.event.awayTeam}</span>
-      </div>
-      {rows.map((row, i) => {
-        const total = (row.hVal || 0) + (row.aVal || 0);
-        const hPct = total > 0 ? ((row.hVal || 0) / total) * 100 : 50;
+    <div className="space-y-4">
+      {/* Form */}
+      {hasStandings && (
+        <div className="rounded-2xl border border-white/[0.06] bg-[#0d1117]/80 p-4">
+          <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Recent Form
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            {[
+              { team: data.event.homeTeam, st: hs! },
+              { team: data.event.awayTeam, st: as_! },
+            ].map(({ team, st }) => (
+              <div key={team}>
+                <p className="text-sm font-medium text-white mb-2">{team}</p>
+                <div className="flex gap-1 mb-2">
+                  {(st.form || '').split('').slice(0, 5).map((ch: string, i: number) => (
+                    <FormDot key={i} ch={ch} />
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-emerald-500/10 p-1.5">
+                    <p className="text-lg font-bold font-mono text-emerald-400">{st.won}</p>
+                    <p className="text-[9px] text-slate-500">Won</p>
+                  </div>
+                  <div className="rounded-lg bg-amber-500/10 p-1.5">
+                    <p className="text-lg font-bold font-mono text-amber-400">{st.drawn}</p>
+                    <p className="text-[9px] text-slate-500">Drawn</p>
+                  </div>
+                  <div className="rounded-lg bg-red-500/10 p-1.5">
+                    <p className="text-lg font-bold font-mono text-red-400">{st.lost}</p>
+                    <p className="text-[9px] text-slate-500">Lost</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Season Stats Comparison */}
+      {hasStandings && (() => {
+        const rows = [
+          { label: 'Position', home: `${hs!.position}${getOrd(hs!.position)}`, away: `${as_!.position}${getOrd(as_!.position)}`, hVal: 21 - hs!.position, aVal: 21 - as_!.position },
+          { label: 'Points', home: hs!.pts, away: as_!.pts, hVal: hs!.pts, aVal: as_!.pts },
+          { label: 'Played', home: hs!.played, away: as_!.played, hVal: hs!.played, aVal: as_!.played },
+          { label: 'Goals/Game', home: homeGpg, away: awayGpg, hVal: parseFloat(homeGpg) || 0, aVal: parseFloat(awayGpg) || 0 },
+          { label: 'Conceded/Game', home: homeCapg, away: awayCapg, hVal: parseFloat(awayCapg) || 0, aVal: parseFloat(homeCapg) || 0 },
+          { label: 'xG/Game', home: homeXgpg, away: awayXgpg, hVal: parseFloat(homeXgpg) || 0, aVal: parseFloat(awayXgpg) || 0 },
+          { label: 'xGA/Game', home: homeXgApg, away: awayXgApg, hVal: parseFloat(awayXgApg) || 0, aVal: parseFloat(homeXgApg) || 0 },
+          { label: 'Goal Diff', home: hs!.gd > 0 ? `+${hs!.gd}` : String(hs!.gd), away: as_!.gd > 0 ? `+${as_!.gd}` : String(as_!.gd), hVal: hs!.gd, aVal: as_!.gd },
+        ];
+
         return (
-          <div key={i} className="px-4 py-2.5 border-b border-white/[0.03]">
-            <div className="grid grid-cols-[1fr_auto_1fr] gap-0 items-center mb-1.5">
-              <span className={cn("text-sm font-mono", (row.hVal || 0) > (row.aVal || 0) ? 'text-emerald-400 font-bold' : 'text-slate-300')}>{row.home}</span>
-              <span className="text-[10px] text-slate-500 px-4 text-center">{row.label}</span>
-              <span className={cn("text-sm font-mono text-right", (row.aVal || 0) > (row.hVal || 0) ? 'text-emerald-400 font-bold' : 'text-slate-300')}>{row.away}</span>
+          <div className="rounded-2xl border border-white/[0.06] bg-[#0d1117]/80 overflow-hidden">
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-0 px-4 py-3 border-b border-white/[0.06] text-[10px] text-slate-500 uppercase tracking-wider">
+              <span>{data.event.homeTeam}</span>
+              <span className="text-center px-4">Season Stats</span>
+              <span className="text-right">{data.event.awayTeam}</span>
             </div>
-            <div className="flex h-1 rounded-full overflow-hidden bg-white/[0.04]">
-              <div className="h-full bg-emerald-500/60 rounded-l-full" style={{ width: `${hPct}%` }} />
-              <div className="h-full bg-cyan-500/60 rounded-r-full" style={{ width: `${100 - hPct}%` }} />
-            </div>
+            {rows.map((row, i) => {
+              const total = Math.abs(row.hVal) + Math.abs(row.aVal);
+              const hPct = total > 0 ? (Math.abs(row.hVal) / total) * 100 : 50;
+              return (
+                <div key={i} className="px-4 py-2.5 border-b border-white/[0.03]">
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-0 items-center mb-1.5">
+                    <span className={cn("text-sm font-mono", row.hVal > row.aVal ? 'text-emerald-400 font-bold' : 'text-slate-300')}>{row.home}</span>
+                    <span className="text-[10px] text-slate-500 px-4 text-center">{row.label}</span>
+                    <span className={cn("text-sm font-mono text-right", row.aVal > row.hVal ? 'text-emerald-400 font-bold' : 'text-slate-300')}>{row.away}</span>
+                  </div>
+                  <div className="flex h-1 rounded-full overflow-hidden bg-white/[0.04]">
+                    <div className="h-full bg-emerald-500/60 rounded-l-full" style={{ width: `${hPct}%` }} />
+                    <div className="h-full bg-cyan-500/60 rounded-r-full" style={{ width: `${100 - hPct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         );
-      })}
+      })()}
+
+      {/* Model Prediction Summary */}
+      {pred && (
+        <div className="rounded-2xl border border-white/[0.06] bg-[#0d1117]/80 p-4">
+          <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5 text-cyan-400" /> Model Assessment
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="rounded-xl bg-white/[0.025] border border-white/[0.05] p-2.5 text-center">
+              <p className="text-[10px] text-slate-500">Expected Style</p>
+              <p className="text-sm font-medium text-white capitalize">{pred.analysis?.gameplay?.expectedStyle || '—'}</p>
+            </div>
+            <div className="rounded-xl bg-white/[0.025] border border-white/[0.05] p-2.5 text-center">
+              <p className="text-[10px] text-slate-500">Expected Goals</p>
+              <p className="text-sm font-mono font-bold text-emerald-400">{pred.analysis?.gameplay?.expectedGoals?.toFixed(1) || '—'}</p>
+            </div>
+            <div className="rounded-xl bg-white/[0.025] border border-white/[0.05] p-2.5 text-center">
+              <p className="text-[10px] text-slate-500">Data Quality</p>
+              <p className="text-sm font-mono font-bold text-cyan-400">{Math.round((pred.analysis?.dataQuality || 0) * 100)}%</p>
+            </div>
+            <div className="rounded-xl bg-white/[0.025] border border-white/[0.05] p-2.5 text-center">
+              <p className="text-[10px] text-slate-500">Model Agreement</p>
+              <p className="text-sm font-mono font-bold text-amber-400">{Math.round((pred.modelAgreement || 0) * 100)}%</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Match Stats (only when available — during/after match) */}
+      {hasLiveStats && (
+        <div className="rounded-2xl border border-white/[0.06] bg-[#0d1117]/80 overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/[0.06] text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Radio className="w-3.5 h-3.5 text-red-400" /> Match Stats
+          </div>
+          <div className="grid grid-cols-[1fr_auto_1fr] gap-0 px-4 py-2 border-b border-white/[0.06] text-[10px] text-slate-500 uppercase tracking-wider">
+            <span>{data.event.homeTeam}</span>
+            <span className="text-center px-4">Stat</span>
+            <span className="text-right">{data.event.awayTeam}</span>
+          </div>
+          {[
+            { label: 'Possession', home: `${s!.homeBallPossession}%`, away: `${s!.awayBallPossession}%`, hVal: s!.homeBallPossession, aVal: s!.awayBallPossession },
+            { label: 'Total Shots', home: s!.homeTotalShots, away: s!.awayTotalShots, hVal: s!.homeTotalShots, aVal: s!.awayTotalShots },
+            { label: 'xG', home: s!.homeXg?.toFixed(2) || '—', away: s!.awayXg?.toFixed(2) || '—', hVal: s!.homeXg, aVal: s!.awayXg },
+            { label: 'Corners', home: s!.homeCorners, away: s!.awayCorners, hVal: s!.homeCorners, aVal: s!.awayCorners },
+            { label: 'Fouls', home: s!.homeFouls, away: s!.awayFouls, hVal: s!.homeFouls, aVal: s!.awayFouls },
+          ].map((row, i) => {
+            const total = (row.hVal || 0) + (row.aVal || 0);
+            const hPct = total > 0 ? ((row.hVal || 0) / total) * 100 : 50;
+            return (
+              <div key={i} className="px-4 py-2.5 border-b border-white/[0.03]">
+                <div className="grid grid-cols-[1fr_auto_1fr] gap-0 items-center mb-1.5">
+                  <span className={cn("text-sm font-mono", (row.hVal || 0) > (row.aVal || 0) ? 'text-emerald-400 font-bold' : 'text-slate-300')}>{row.home}</span>
+                  <span className="text-[10px] text-slate-500 px-4 text-center">{row.label}</span>
+                  <span className={cn("text-sm font-mono text-right", (row.aVal || 0) > (row.hVal || 0) ? 'text-emerald-400 font-bold' : 'text-slate-300')}>{row.away}</span>
+                </div>
+                <div className="flex h-1 rounded-full overflow-hidden bg-white/[0.04]">
+                  <div className="h-full bg-emerald-500/60 rounded-l-full" style={{ width: `${hPct}%` }} />
+                  <div className="h-full bg-cyan-500/60 rounded-r-full" style={{ width: `${100 - hPct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
