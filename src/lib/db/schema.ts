@@ -59,6 +59,21 @@ export async function ensureSchema() {
       FOREIGN KEY (fixture_id) REFERENCES fixtures(id)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_predictions_fixture ON predictions(fixture_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)`
+    `CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)`,
+    `CREATE TABLE IF NOT EXISTS user_subscriptions (
+      clerk_user_id TEXT PRIMARY KEY,
+      stripe_subscription_id TEXT,
+      plan TEXT NOT NULL DEFAULT 'free',
+      status TEXT NOT NULL DEFAULT 'active',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_prediction_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      clerk_user_id TEXT NOT NULL,
+      fixture_id INTEGER NOT NULL,
+      date TEXT NOT NULL DEFAULT (date('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_upl_user_date ON user_prediction_log(clerk_user_id, date)`,
   ], 'write');
 }

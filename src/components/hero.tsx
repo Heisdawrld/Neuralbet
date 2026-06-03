@@ -1,5 +1,6 @@
 import { ArrowRight, Brain, ShieldCheck, Zap } from 'lucide-react';
 import { CipherLogo } from './logo';
+import { AuthActions } from './auth/auth-actions';
 
 export function Hero() {
   return (
@@ -11,9 +12,7 @@ export function Hero() {
           <a href="#pricing">Pricing</a>
           <a href="#fixtures">Fixtures</a>
         </div>
-        <button className="rounded-full border border-blue-400/30 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-100 hover:bg-blue-500/20">
-          Sign in
-        </button>
+        <AuthActions />
       </nav>
 
       <section className="mx-auto grid max-w-7xl items-center gap-12 py-20 lg:grid-cols-[1.05fr_.95fr] lg:py-28">
