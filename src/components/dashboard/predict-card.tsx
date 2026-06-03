@@ -44,12 +44,12 @@ export async function PredictCard({ fixtureId }: { fixtureId: number }) {
   const conf = CONFIDENCE_COLORS[pred.confidence];
 
   return (
-    <div className="glass rounded-3xl p-6">
-      <div className="mb-6 flex items-center justify-between gap-4">
+    <div className="glass rounded-3xl p-4 md:p-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Brain className="h-5 w-5 text-blue-300" />
-            <h2 className="text-2xl font-black text-white">Cipher Report</h2>
+            <h2 className="text-xl font-black text-white sm:text-2xl">Cipher Report</h2>
           </div>
           <p className="mt-1 text-xs text-slate-500">Fixture #{fixtureId} · {pred.tier.toUpperCase()} tier</p>
         </div>
@@ -58,7 +58,7 @@ export async function PredictCard({ fixtureId }: { fixtureId: number }) {
         </div>
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
           <div className="text-xs uppercase text-slate-500">Best Read</div>
           <div className="mt-2 text-xl font-black text-white">{pred.selection}</div>
@@ -107,7 +107,7 @@ export async function PredictCard({ fixtureId }: { fixtureId: number }) {
         </div>
         <div className="space-y-2">
           {pred.picks.map((pick) => (
-            <div key={`${pick.market}-${pick.selection}`} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+            <div key={`${pick.market}-${pick.selection}`} className="flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-bold text-white">{pick.selection}</div>
                 <div className="text-xs text-slate-500">{pick.market}</div>

@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   return (
     <div>
       <Topbar title="Overview" />
-      <main className="p-6">
+      <main className="p-4 md:p-6">
         {/* Greeting */}
         <div className="mb-8">
           <h2 className="text-2xl font-black text-white">
@@ -28,12 +28,12 @@ export default async function DashboardPage() {
         </div>
 
         {/* Upgrade Banner */}
-        <div className="mb-8 glass rounded-2xl p-5 flex items-center justify-between gap-4">
+        <div className="glass mb-8 flex flex-col gap-4 rounded-2xl p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-sm font-bold text-blue-200">Unlock Cipher Premium</div>
             <div className="mt-1 text-xs text-slate-400">Unlimited predictions, full analyst reports, edge detection and Kelly stake sizing.</div>
           </div>
-          <button className="shrink-0 rounded-xl bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-[0_0_24px_rgba(59,130,246,.3)] hover:bg-blue-400">
+          <button className="w-full shrink-0 rounded-xl bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-[0_0_24px_rgba(59,130,246,.3)] hover:bg-blue-400 sm:w-auto">
             Upgrade — $19/mo
           </button>
         </div>

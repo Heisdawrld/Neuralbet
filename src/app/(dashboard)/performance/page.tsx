@@ -27,7 +27,7 @@ export default async function PerformancePage() {
   return (
     <div>
       <Topbar title="Performance" />
-      <main className="p-6">
+      <main className="p-4 md:p-6">
         <div className="mb-8">
           <h2 className="text-2xl font-black text-white">Performance intelligence</h2>
           <p className="mt-1 text-slate-400">Every prediction is tracked, settled, and measured by market.</p>
@@ -56,8 +56,8 @@ export default async function PerformancePage() {
               No prediction records yet. Generate predictions to start building your performance profile.
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-slate-800">
-              <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="min-w-[680px] w-full text-left text-sm">
                 <thead className="bg-slate-950/70 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Market</th>

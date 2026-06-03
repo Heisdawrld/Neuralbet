@@ -10,7 +10,7 @@ export default async function SettingsPage() {
   return (
     <div>
       <Topbar title="Settings" />
-      <main className="p-6 max-w-2xl">
+      <main className="max-w-2xl p-4 md:p-6">
         <div className="space-y-6">
           <div className="glass rounded-2xl p-6">
             <h3 className="text-lg font-bold text-white mb-4">Plan & Billing</h3>

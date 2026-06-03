@@ -18,7 +18,7 @@ export default async function PredictPage({
   return (
     <div>
       <Topbar title="Predict" />
-      <main className="p-6">
+      <main className="p-4 md:p-6">
         {!fixtureId ? (
           <div className="glass rounded-2xl p-8 text-center text-slate-400">
             <p className="font-medium">Select a fixture to see Cipher&apos;s prediction.</p>

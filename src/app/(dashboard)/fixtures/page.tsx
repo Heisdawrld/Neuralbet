@@ -9,7 +9,7 @@ export default async function FixturesPage() {
   return (
     <div>
       <Topbar title="Fixtures" />
-      <main className="p-6">
+      <main className="p-4 md:p-6">
         <FixturesList />
       </main>
     </div>

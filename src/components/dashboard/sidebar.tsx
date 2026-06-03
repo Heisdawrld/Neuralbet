@@ -17,7 +17,7 @@ const NAV = [
 export function Sidebar() {
   const path = usePathname();
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-800/60 bg-[#070a13]/95 backdrop-blur-xl">
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800/60 bg-[#070a13]/95 backdrop-blur-xl md:flex">
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 border-b border-slate-800/60 px-5">
         <div className="prism relative grid h-9 w-9 place-items-center rounded-xl border border-blue-400/30 bg-blue-500/10">

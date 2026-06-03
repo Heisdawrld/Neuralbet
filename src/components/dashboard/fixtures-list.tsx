@@ -62,21 +62,21 @@ export function FixturesList() {
       ) : (
         <div className="space-y-3">
           {fixtures.map((f) => (
-            <div key={f.id} className="glass flex items-center justify-between rounded-2xl px-5 py-4">
-              <div className="flex items-center gap-4">
-                <div className="text-center">
+            <div key={f.id} className="glass flex flex-col gap-4 rounded-2xl px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="min-w-14 text-center">
                   <div className="text-xs text-slate-500">{f.league_name || 'League'}</div>
                   <div className="mt-1 text-sm text-slate-400">{f.event_date?.slice(11, 16) || '—'}</div>
                 </div>
                 <div className="w-px h-8 bg-slate-800" />
                 <div>
-                  <div className="font-bold text-slate-100">{f.home_team} <span className="text-slate-500 font-normal">vs</span> {f.away_team}</div>
+                  <div className="text-sm font-bold text-slate-100 sm:text-base">{f.home_team} <span className="text-slate-500 font-normal">vs</span> {f.away_team}</div>
                   <div className="mt-0.5 text-xs text-slate-500 capitalize">{f.status}</div>
                 </div>
               </div>
               <Link
                 href={`/predict?fixtureId=${f.id}`}
-                className="flex items-center gap-2 rounded-xl bg-blue-500/10 border border-blue-400/20 px-4 py-2 text-sm font-semibold text-blue-200 hover:bg-blue-500/20"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-200 hover:bg-blue-500/20 sm:w-auto"
               >
                 <Brain className="h-3.5 w-3.5" />
                 Predict
