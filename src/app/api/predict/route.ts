@@ -4,6 +4,7 @@ import { predictFixture } from '@/lib/cipher/model';
 import { getStoredFixtureInput } from '@/lib/db/read-model';
 import { getAuth } from '@/lib/auth/server';
 import { getEntitlement, logPredictionUse } from '@/lib/auth/entitlements';
+import { savePredictionRecord } from '@/lib/performance/records';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
 
   const input = await buildFixtureInput(fixtureId);
   const prediction = predictFixture(input, { tier: entitlement.plan });
+  await savePredictionRecord({ userId, prediction, fixture: { leagueId: input.leagueId, kickoffAt: input.kickoffAt } });
   await logPredictionUse(userId, fixtureId);
 
   return NextResponse.json({ ...prediction, entitlement: { ...entitlement, predictionsToday: entitlement.predictionsToday + 1, remaining: Math.max(0, entitlement.remaining - 1) } });
