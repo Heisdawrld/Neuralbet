@@ -20,17 +20,27 @@ export type FixtureInput = {
   };
 };
 
-export type CipherPrediction = {
-  fixtureId: number;
+export type Confidence = 'STRONG' | 'LEAN' | 'WATCH' | 'SKIP';
+export type Risk = 'SAFE' | 'BALANCED' | 'AGGRESSIVE' | 'NO_BET';
+
+export type CipherPick = {
   market: string;
   selection: string;
   probability: number;
   fairOdds: number;
   bookmakerOdds: number | null;
   edge: number | null;
-  confidence: 'STRONG' | 'LEAN' | 'WATCH' | 'SKIP';
-  risk: 'SAFE' | 'BALANCED' | 'AGGRESSIVE' | 'NO_BET';
+  confidence: Confidence;
+  risk: Risk;
   stakeFraction: number;
+  premiumOnly: boolean;
+};
+
+export type CipherPrediction = CipherPick & {
+  fixtureId: number;
   report: string;
   features: Record<string, unknown>;
+  picks: CipherPick[];
+  tier: 'free' | 'premium';
+  lockedPicks: number;
 };

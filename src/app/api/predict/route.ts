@@ -2,19 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { eventOdds, bsdFetch, type BsdFixture } from '@/lib/bsd/client';
 import { predictFixture } from '@/lib/cipher/model';
 import { getStoredFixtureInput } from '@/lib/db/read-model';
+import { getAuth } from '@/lib/auth/server';
+import { getEntitlement, logPredictionUse } from '@/lib/auth/entitlements';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const fixtureId = Number(new URL(req.url).searchParams.get('fixtureId'));
-  if (!fixtureId) return NextResponse.json({ error: 'Missing fixtureId' }, { status: 400 });
-
+async function buildFixtureInput(fixtureId: number) {
   const stored = await getStoredFixtureInput(fixtureId).catch(() => null);
-  if (stored) return NextResponse.json(predictFixture(stored));
+  if (stored) return stored;
 
   const fixture = await bsdFetch<BsdFixture>(`events/${fixtureId}/`);
   const odds = await eventOdds(fixtureId).catch(() => ({ odds: {} }));
-  const prediction = predictFixture({
+  return {
     id: fixture.id,
     leagueId: fixture.league_id,
     leagueName: fixture.league_name,
@@ -24,6 +23,28 @@ export async function GET(req: NextRequest) {
     awayTeam: fixture.away_team,
     kickoffAt: fixture.event_date,
     odds: odds.odds || {},
-  });
-  return NextResponse.json(prediction);
+  };
+}
+
+export async function GET(req: NextRequest) {
+  const fixtureId = Number(new URL(req.url).searchParams.get('fixtureId'));
+  if (!fixtureId) return NextResponse.json({ error: 'Missing fixtureId' }, { status: 400 });
+
+  const { userId } = await getAuth();
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const entitlement = await getEntitlement(userId);
+  if (entitlement.plan === 'free' && entitlement.remaining <= 0) {
+    return NextResponse.json({
+      error: 'Free prediction limit reached',
+      entitlement,
+      upgrade: { price: 19, plan: 'premium', message: 'Upgrade to unlock unlimited predictions and all markets.' },
+    }, { status: 402 });
+  }
+
+  const input = await buildFixtureInput(fixtureId);
+  const prediction = predictFixture(input, { tier: entitlement.plan });
+  await logPredictionUse(userId, fixtureId);
+
+  return NextResponse.json({ ...prediction, entitlement: { ...entitlement, predictionsToday: entitlement.predictionsToday + 1, remaining: Math.max(0, entitlement.remaining - 1) } });
 }
