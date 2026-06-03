@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: cipher
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: BSD_API_KEY
+        sync: false
+      - key: BSD_API_BASE_URL
+        value: https://sports.bzzoiro.com/api/v2/
+      - key: SYNC_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: NEXT_PUBLIC_STRIPE_PRICE_PREMIUM_MONTHLY
+        sync: false
