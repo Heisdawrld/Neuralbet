@@ -7,3 +7,7 @@ node_modules
 coverage
 .DS_Store
 *.tsbuildinfo
+
+# Local SQLite fallback database
+cipher.db
+*.db
