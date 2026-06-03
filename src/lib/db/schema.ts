@@ -1,0 +1,64 @@
+import { db } from './client';
+
+export async function ensureSchema() {
+  const cx = db();
+  await cx.batch([
+    `CREATE TABLE IF NOT EXISTS fixtures (
+      id INTEGER PRIMARY KEY,
+      league_id INTEGER NOT NULL,
+      league_name TEXT,
+      home_team_id INTEGER NOT NULL,
+      home_team TEXT NOT NULL,
+      away_team_id INTEGER NOT NULL,
+      away_team TEXT NOT NULL,
+      kickoff_at TEXT NOT NULL,
+      status TEXT NOT NULL,
+      home_score INTEGER,
+      away_score INTEGER,
+      raw_json TEXT NOT NULL,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_fixtures_kickoff ON fixtures(kickoff_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_fixtures_status ON fixtures(status)`,
+    `CREATE TABLE IF NOT EXISTS odds_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fixture_id INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'bsd',
+      odds_json TEXT NOT NULL,
+      captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (fixture_id) REFERENCES fixtures(id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_odds_fixture_time ON odds_snapshots(fixture_id, captured_at)`,
+    `CREATE TABLE IF NOT EXISTS team_memory (
+      team_id INTEGER PRIMARY KEY,
+      team_name TEXT NOT NULL,
+      league_id INTEGER,
+      last_matches_json TEXT NOT NULL DEFAULT '[]',
+      momentum_score REAL NOT NULL DEFAULT 0.5,
+      attack_form REAL NOT NULL DEFAULT 0.5,
+      defense_form REAL NOT NULL DEFAULT 0.5,
+      fatigue_score REAL NOT NULL DEFAULT 0.5,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS predictions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fixture_id INTEGER NOT NULL,
+      model_version TEXT NOT NULL,
+      market TEXT NOT NULL,
+      selection TEXT NOT NULL,
+      probability REAL NOT NULL,
+      fair_odds REAL NOT NULL,
+      bookmaker_odds REAL,
+      edge REAL,
+      confidence TEXT NOT NULL,
+      risk TEXT NOT NULL,
+      stake_fraction REAL NOT NULL,
+      analyst_report TEXT NOT NULL,
+      features_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (fixture_id) REFERENCES fixtures(id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_predictions_fixture ON predictions(fixture_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)`
+  ], 'write');
+}
