@@ -27,3 +27,32 @@ Use relative imports inside engine modules unless/until a Vitest alias config is
 - Related Files: src/lib/cipher/model.ts, src/lib/cipher/__tests__/model.test.ts
 
 ---
+
+## [ERR-20260603-002] live_vercel_url_404
+
+**Logged**: 2026-06-03T08:28:00Z
+**Priority**: high
+**Status**: pending
+**Area**: deployment
+
+### Summary
+The provided live Vercel URL returned 404 during smoke check.
+
+### Error
+```text
+https://neuralbet-lovat.vercel.app/ -> 404: NOT_FOUND
+```
+
+### Context
+- User provided live URL for verification.
+- Need re-check after Phase 3.1 push.
+- Possible causes: Vercel deployment failed, alias not pointing to project, project still deploying, or build env missing.
+
+### Suggested Fix
+After successful push, inspect Vercel deployment status/logs or ask user to check project alias if URL still 404.
+
+### Metadata
+- Reproducible: yes
+- Related Files: deployment/Vercel
+
+---

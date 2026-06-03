@@ -1,5 +1,14 @@
 import { db } from './client';
 
+async function tryExecute(sql: string) {
+  try {
+    await db().execute(sql);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes('duplicate column')) throw error;
+  }
+}
+
 export async function ensureSchema() {
   const cx = db();
   await cx.batch([
@@ -38,6 +47,7 @@ export async function ensureSchema() {
       attack_form REAL NOT NULL DEFAULT 0.5,
       defense_form REAL NOT NULL DEFAULT 0.5,
       fatigue_score REAL NOT NULL DEFAULT 0.5,
+      volatility_score REAL NOT NULL DEFAULT 0.5,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
     `CREATE TABLE IF NOT EXISTS predictions (
@@ -76,4 +86,6 @@ export async function ensureSchema() {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_upl_user_date ON user_prediction_log(clerk_user_id, date)`,
   ], 'write');
+
+  await tryExecute(`ALTER TABLE team_memory ADD COLUMN volatility_score REAL NOT NULL DEFAULT 0.5`);
 }
